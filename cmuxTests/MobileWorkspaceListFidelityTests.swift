@@ -10,6 +10,61 @@ import Foundation
 @testable import cmux
 #endif
 
+private actor MobileWorkspaceObserverUpdateRecorder {
+    private struct Waiter {
+        let index: Int
+        let continuation: CheckedContinuation<Int?, Never>
+    }
+
+    private var hashes: [Int] = []
+    private var waiters: [UUID: Waiter] = [:]
+
+    func record(_ hash: Int) {
+        hashes.append(hash)
+        let ready = waiters.filter { $0.value.index < hashes.count }
+        for (id, _) in ready {
+            waiters.removeValue(forKey: id)
+        }
+        for (_, waiter) in ready {
+            waiter.continuation.resume(returning: hashes[waiter.index])
+        }
+    }
+
+    func waitForUpdate(at index: Int, timeout: Duration = .seconds(2)) async -> Int? {
+        await withTaskGroup(of: Int?.self) { group in
+            group.addTask { await self.waitWithoutDeadline(at: index) }
+            group.addTask {
+                do { try await Task.sleep(for: timeout) } catch { return nil }
+                return nil
+            }
+            let result = await group.next() ?? nil
+            group.cancelAll()
+            return result
+        }
+    }
+
+    private func waitWithoutDeadline(at index: Int) async -> Int? {
+        guard index >= hashes.count else { return hashes[index] }
+        let id = UUID()
+        return await withTaskCancellationHandler {
+            await withCheckedContinuation { continuation in
+                guard !Task.isCancelled else {
+                    continuation.resume(returning: nil)
+                    return
+                }
+                waiters[id] = Waiter(index: index, continuation: continuation)
+            }
+        } onCancel: { [weak self] in
+            guard let self else { return }
+            Task { await self.cancelWaiter(id: id) }
+        }
+    }
+
+    private func cancelWaiter(id: UUID) {
+        waiters.removeValue(forKey: id)?.continuation.resume(returning: nil)
+    }
+}
+
 /// Covers the mobile workspace-list fidelity fixes: bonsplit layout serialization,
 /// terminal spatial order, custom titles, and observer topology invalidation.
 ///
@@ -201,20 +256,36 @@ struct MobileWorkspaceListFidelityTests {
         let firstTabID = try #require(workspace.surfaceIdFromPanelId(firstPanelID))
         let secondTabID = try #require(workspace.surfaceIdFromPanelId(secondPanel.id))
         workspace.bonsplitController.selectTab(firstTabID)
-        let observer = MobileWorkspaceListObserver(tabManager: manager)
-        let initialSummaryHash = observer.lastSummaryHash
+        let updates = MobileWorkspaceObserverUpdateRecorder()
+        let observer = MobileWorkspaceListObserver(
+            tabManager: manager,
+            workspaceUpdateEmitter: { hash in
+                Task { await updates.record(hash) }
+            }
+        )
+        let initialSummaryHash = try #require(
+            await updates.waitForUpdate(at: 0),
+            "the observer should publish its initial snapshot"
+        )
 
         workspace.bonsplitController.selectTab(secondTabID)
-        try await Task.sleep(for: .milliseconds(200))
-        let hashAfterSelection = observer.lastSummaryHash
+        let hashAfterSelection = try #require(
+            await updates.waitForUpdate(at: 1),
+            "pane selection should publish without a fixed delay"
+        )
         #expect(hashAfterSelection != initialSummaryHash, "selection publishes through the observer")
 
+        // Follow the no-op with a material change. The next delivered hash must
+        // belong to that change; a redundant no-op emission would repeat the
+        // selection hash and fail this assertion deterministically.
         workspace.bonsplitController.selectTab(secondTabID)
-        try await Task.sleep(for: .milliseconds(200))
-        #expect(
-            observer.lastSummaryHash == hashAfterSelection,
-            "a no-op selection stays suppressed"
+        workspace.title = "Observer event barrier"
+        let hashAfterBarrier = try #require(
+            await updates.waitForUpdate(at: 2),
+            "the material change should publish after the no-op"
         )
+        #expect(hashAfterBarrier != hashAfterSelection, "a no-op selection stays suppressed")
+        _ = observer
     }
 
     @Test func orderedPanelIdsMatchesBonsplitSpatialOrder() throws {
