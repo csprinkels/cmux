@@ -113,6 +113,39 @@ struct GitCommandRunnerTests {
         #expect(try fixture.git(["diff", "--cached", "--", "a.txt"]).isEmpty)
     }
 
+    @Test("Top-level resolution finds the root from a subdirectory")
+    func topLevelResolution() async throws {
+        let (fixture, runner) = try makeFixture()
+        try fixture.write("one\n", to: "nested/dir/a.txt")
+        try fixture.commitAll(message: "initial")
+        let fromSubdirectory = await runner.repositoryTopLevel(
+            containing: fixture.root.appendingPathComponent("nested/dir")
+        )
+        #expect(fromSubdirectory?.standardizedFileURL.path == fixture.root.standardizedFileURL.resolvingSymlinksInPath().path
+            || fromSubdirectory?.resolvingSymlinksInPath().path == fixture.root.resolvingSymlinksInPath().path)
+        let outside = await runner.repositoryTopLevel(
+            containing: FileManager.default.temporaryDirectory
+        )
+        #expect(outside == nil)
+    }
+
+    @Test("Status separates staged and worktree sides with untracked files")
+    func statusSeparatesSides() async throws {
+        let (fixture, runner) = try makeFixture()
+        try fixture.write("one\n", to: "a.txt")
+        try fixture.commitAll(message: "initial")
+        try fixture.write("two\n", to: "a.txt")
+        try await runner.stage(paths: ["a.txt"], in: fixture.root)
+        try fixture.write("three\n", to: "a.txt")
+        try fixture.write("new\n", to: "b.txt")
+
+        let entries = try await runner.status(in: fixture.root)
+        let a = try #require(entries.first(where: { $0.path == "a.txt" }))
+        #expect(a.indexState == .modified && a.worktreeState == .modified)
+        let b = try #require(entries.first(where: { $0.path == "b.txt" }))
+        #expect(b.indexState == .untracked && !b.isStaged && b.hasWorktreeChanges)
+    }
+
     @Test("Failures carry git's stderr and the exit code")
     func failureCarriesStderr() async throws {
         let (fixture, runner) = try makeFixture()

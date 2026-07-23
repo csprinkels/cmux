@@ -852,6 +852,7 @@ struct ContentView: View {
     @State private var sidebarRenderWorkerClient: RenderWorkerClient?
     @StateObject private var fullscreenControlsViewModel = TitlebarControlsViewModel()
     @StateObject private var fileExplorerStore = FileExplorerStore()
+    @State private var sourceControlStore = SourceControlStore()
     /// Where the file tree is mounted (`fileExplorer.placement`): right
     /// sidebar Files tab, left sidebar below the workspace list, or both.
     @AppStorage(FileExplorerPlacementSettings.key) private var fileExplorerPlacementRaw = FileExplorerPlacementSettings.defaultValue.rawValue
@@ -2005,6 +2006,7 @@ struct ContentView: View {
             fileExplorerStore: fileExplorerStore,
             fileExplorerState: fileExplorerState,
             sessionIndexStore: sessionIndexStore,
+            sourceControlStore: sourceControlStore,
             titlebarHeight: RightSidebarChromeMetrics.titlebarHeight,
             windowAppearance: appearance,
             workspaceId: tabManager.selectedTabId,
@@ -2512,6 +2514,7 @@ struct ContentView: View {
             // sessions panel doesn't keep filtering by a stale previous tab.
             sessionIndexStore.setCurrentDirectoryIfChanged(nil)
             fileExplorerStore.applyWorkspaceRoot(.none)
+            sourceControlStore.setWorkspaceDirectory(nil)
             return
         }
 
@@ -2519,6 +2522,7 @@ struct ContentView: View {
 
         if tab.usesRemoteDirectoryProvenance {
             sessionIndexStore.setCurrentDirectoryIfChanged(nil)
+            sourceControlStore.setWorkspaceDirectory(nil)
             guard shouldSyncFileExplorerStore else {
                 fileExplorerStore.applyWorkspaceRoot(.none)
                 return
@@ -2562,10 +2566,12 @@ struct ContentView: View {
         guard !dir.isEmpty else {
             sessionIndexStore.setCurrentDirectoryIfChanged(nil)
             fileExplorerStore.applyWorkspaceRoot(.none)
+            sourceControlStore.setWorkspaceDirectory(nil)
             return
         }
 
         sessionIndexStore.setCurrentDirectoryIfChanged(dir)
+        sourceControlStore.setWorkspaceDirectory(dir)
         guard shouldSyncFileExplorerStore else {
             fileExplorerStore.applyWorkspaceRoot(.none)
             return

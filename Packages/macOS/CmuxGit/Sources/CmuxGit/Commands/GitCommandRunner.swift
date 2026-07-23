@@ -145,6 +145,25 @@ public actor GitCommandRunner {
         try await run(["pull", "--ff-only"], in: repository)
     }
 
+    // MARK: - Repository
+
+    /// Resolves the working-tree root containing the given directory
+    /// (`git rev-parse --show-toplevel`), or `nil` when the directory is not
+    /// inside a git repository.
+    ///
+    /// Porcelain status paths are root-relative, so every other command in
+    /// this runner should be invoked with the URL this returns.
+    ///
+    /// - Parameter directory: Any directory, typically a workspace's cwd.
+    public func repositoryTopLevel(containing directory: URL) async -> URL? {
+        guard let output = try? await run(["rev-parse", "--show-toplevel"], in: directory) else {
+            return nil
+        }
+        let path = output.standardOutput.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !path.isEmpty else { return nil }
+        return URL(fileURLWithPath: path, isDirectory: true)
+    }
+
     // MARK: - Status
 
     /// Reads the repository's change list with staged/unstaged sides intact
