@@ -80,3 +80,36 @@ enum FileExplorerDoubleClickActionSettings {
         }
     }
 }
+
+// MARK: - Placement
+
+/// Where the file explorer tree is mounted.
+///
+/// `right` (the default) is the established right-sidebar Files tool. `left`
+/// mounts the tree in the left sidebar below the workspace list and hides the
+/// right sidebar's Files tab. `both` shows both, sharing one store/selection.
+enum FileExplorerPlacement: String, CaseIterable, Sendable {
+    case right
+    case left
+    case both
+
+    var showsLeftSidebarFiles: Bool { self != .right }
+    var showsRightSidebarFiles: Bool { self != .left }
+}
+
+enum FileExplorerPlacementSettings {
+    /// UserDefaults / cmux.json key (`fileExplorer.placement`).
+    static let key = "fileExplorer.placement"
+    static let defaultValue: FileExplorerPlacement = .right
+
+    static func placement(forRawValue raw: String?) -> FileExplorerPlacement {
+        guard let raw, let placement = FileExplorerPlacement(rawValue: raw) else {
+            return defaultValue
+        }
+        return placement
+    }
+
+    static func current(defaults: UserDefaults = .standard) -> FileExplorerPlacement {
+        placement(forRawValue: defaults.string(forKey: key))
+    }
+}

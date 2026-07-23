@@ -77,12 +77,14 @@ enum HeaderChromeIconStyle {
 }
 
 enum RightSidebarChromeControlStyle {
-    static let modeIconSize: CGFloat = 11
+    static let modeIconSize: CGFloat = 13
     static let secondaryIconSize: CGFloat = 10
     static let labelSize: CGFloat = 11
     static let iconWeight = HeaderChromeIconStyle.weight
     static let labelWeight = HeaderChromeIconStyle.weight
-    static let foregroundColor = HeaderChromeIconStyle.foregroundColor
+    // labelColor (not secondaryLabelColor): icon-only chrome reads too dim
+    // at secondary strength next to the native titlebar controls.
+    static let foregroundColor = Color(nsColor: .labelColor)
 
     static func foregroundOpacity(isSelected: Bool, isHovered: Bool, isEnabled: Bool = true) -> Double {
         guard isEnabled else { return HeaderChromeIconStyle.disabledOpacity }
@@ -212,7 +214,7 @@ private struct RightSidebarHeaderIconButtonStyleBody: View {
                 width: RightSidebarChromeMetrics.headerControlSize,
                 height: RightSidebarChromeMetrics.headerControlSize
             )
-            .foregroundStyle(HeaderChromeIconStyle.foregroundColor.opacity(foregroundOpacity))
+            .foregroundStyle(RightSidebarChromeControlStyle.foregroundColor.opacity(foregroundOpacity))
             .background {
                 if backgroundOpacity > 0 {
                     RoundedRectangle(cornerRadius: RightSidebarChromeMetrics.headerControlCornerRadius, style: .continuous)
@@ -347,6 +349,8 @@ struct ModeBarButton: View {
 
     var body: some View {
         Button(action: action) {
+            // Icon-only, like the native titlebar controls; the label stays
+            // available through the tooltip and accessibility label.
             HStack(spacing: 4) {
                 CmuxSystemSymbolImage(
                     systemName: item.symbolName,
@@ -358,13 +362,6 @@ struct ModeBarButton: View {
                         keyPrefix: "rightSidebarModeIcon_\(item.id)",
                         isVisible: true
                     )
-                Text(item.label)
-                    .cmuxFont(
-                        size: RightSidebarChromeControlStyle.labelSize,
-                        weight: RightSidebarChromeControlStyle.labelWeight
-                    )
-                    .lineLimit(1)
-                    .truncationMode(.tail)
                 if badgeCount > 0 {
                     pendingChip
                 }
@@ -388,6 +385,7 @@ struct ModeBarButton: View {
         .titlebarInteractiveControl()
         .onHover { isHovered = $0 }
         .help(helpText)
+        .accessibilityLabel(item.label)
         .accessibilityIdentifier("RightSidebarModeButton.\(item.id)")
         .shortcutHintVisibilityAnimation(value: showsShortcutHint)
     }

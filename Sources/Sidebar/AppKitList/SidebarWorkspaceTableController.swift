@@ -24,6 +24,7 @@ final class SidebarWorkspaceTableController: NSObject, NSTableViewDataSource, NS
         viewportChangeFlush: { [weak self] in self?.flushViewportChange() }
     )
     private let rowHeightCache = SidebarWorkspaceTableRowHeightCache()
+    private var lastNotifiedContentHeight: CGFloat = -1
     private let dropTargetGeometry = SidebarWorkspaceTableDropTargetGeometryGate()
 
 #if DEBUG
@@ -312,6 +313,34 @@ final class SidebarWorkspaceTableController: NSObject, NSTableViewDataSource, NS
         recomputeHoveredRow()
         enforceHoverOnVisibleCells()
         updateDropTargets()
+        notifyContentHeightIfChanged()
+    }
+
+    /// Publishes the list's true content height so the left-sidebar files
+    /// placement can size the tree to the space the list doesn't need.
+    /// Async post: applies can run inside a SwiftUI update pass, and the
+    /// observer writes view state.
+    private func notifyContentHeightIfChanged() {
+        guard let table = containerView?.tableView else { return }
+        let spacing = table.intercellSpacing.height
+        let width = lastMeasuredWidth > 0 ? lastMeasuredWidth : currentColumnWidth()
+        var total: CGFloat = 0
+        for configuration in rows {
+            let height = pumpHeightOverrides[configuration.id]
+                ?? rowHeightCache.height(for: configuration, columnWidth: width)
+                ?? configuration.estimatedHeight
+            total += height + spacing
+        }
+        guard abs(total - lastNotifiedContentHeight) > 0.5 else { return }
+        lastNotifiedContentHeight = total
+        let window = table.window
+        DispatchQueue.main.async {
+            NotificationCenter.default.post(
+                name: .sidebarWorkspaceListContentHeightDidChange,
+                object: window,
+                userInfo: [SidebarWorkspaceListContentHeight.userInfoKey: total]
+            )
+        }
     }
 
     /// Row clicks route through the table's action (NSTableView owns the
@@ -1086,4 +1115,18 @@ final class SidebarWorkspaceTableController: NSObject, NSTableViewDataSource, NS
             height: 2
         )
     }
+}
+
+// MARK: - Content height reporting
+
+enum SidebarWorkspaceListContentHeight {
+    static let userInfoKey = "height"
+}
+
+extension Notification.Name {
+    /// Posted (object = the list's window) when the workspace list's total
+    /// content height changes; userInfo carries the height under
+    /// `SidebarWorkspaceListContentHeight.userInfoKey`.
+    static let sidebarWorkspaceListContentHeightDidChange =
+        Notification.Name("cmux.sidebarWorkspaceListContentHeightDidChange")
 }

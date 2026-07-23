@@ -43,6 +43,7 @@ public struct AppSection: View {
     @State private var canvasSnapping: DefaultsValueModel<Bool>
     @State private var fileEditorWordWrap: DefaultsValueModel<Bool>
     @State private var fileEditorEngine: DefaultsValueModel<String>
+    @State private var fileExplorerPlacement: DefaultsValueModel<String>
     @State private var iMessage: DefaultsValueModel<Bool>
     @State private var reorder: DefaultsValueModel<Bool>
     @State private var dockBadge: DefaultsValueModel<Bool>
@@ -96,6 +97,7 @@ public struct AppSection: View {
         _canvasSnapping = State(initialValue: DefaultsValueModel(store: defaultsStore, key: catalog.canvas.snappingEnabled))
         _fileEditorWordWrap = State(initialValue: DefaultsValueModel(store: defaultsStore, key: catalog.fileEditor.wordWrap))
         _fileEditorEngine = State(initialValue: DefaultsValueModel(store: defaultsStore, key: catalog.fileEditor.engine))
+        _fileExplorerPlacement = State(initialValue: DefaultsValueModel(store: defaultsStore, key: catalog.fileExplorer.placement))
         _iMessage = State(initialValue: DefaultsValueModel(store: defaultsStore, key: catalog.app.iMessageMode))
         _reorder = State(initialValue: DefaultsValueModel(store: defaultsStore, key: catalog.app.reorderOnNotification))
         _dockBadge = State(initialValue: DefaultsValueModel(store: defaultsStore, key: catalog.notifications.dockBadge))
@@ -138,7 +140,7 @@ public struct AppSection: View {
             mainCard
         }
         .task {
-            startSettingsObservation([language, appearance, appIcon, placement, inheritDir, minimalMode, keepWorkspaceOpen, firstClick, fileDrop, preferredEditor, openSupported, openMarkdown, globalFontMagnification, markdownFontSize, markdownFontFamily, markdownMaxWidth, canvasPaneGap, canvasSnapping, fileEditorWordWrap, fileEditorEngine, iMessage, reorder, dockBadge, menuBarOnly, showInMenuBar, paneRing, paneFlash, agentPermissionPrompt, agentTurnComplete, agentIdleReminder, soundName, soundCommand, customSoundFile, telemetry, confirmQuit, warnCloseTab, warnCloseX, hideCloseButton, renameSelects, paletteAllSurfaces])
+            startSettingsObservation([language, appearance, appIcon, placement, inheritDir, minimalMode, keepWorkspaceOpen, firstClick, fileDrop, preferredEditor, openSupported, openMarkdown, globalFontMagnification, markdownFontSize, markdownFontFamily, markdownMaxWidth, canvasPaneGap, canvasSnapping, fileEditorWordWrap, fileEditorEngine, fileExplorerPlacement, iMessage, reorder, dockBadge, menuBarOnly, showInMenuBar, paneRing, paneFlash, agentPermissionPrompt, agentTurnComplete, agentIdleReminder, soundName, soundCommand, customSoundFile, telemetry, confirmQuit, warnCloseTab, warnCloseX, hideCloseButton, renameSelects, paletteAllSurfaces])
             if languageAtAppear == nil { languageAtAppear = language.current }; if telemetryAtAppear == nil { telemetryAtAppear = telemetry.current }
         }
     }
@@ -507,6 +509,24 @@ public struct AppSection: View {
                 .labelsHidden()
                 .pickerStyle(.menu)
                 .accessibilityIdentifier("SettingsFileEditorEnginePicker")
+            }
+            SettingsCardDivider()
+
+            // File Explorer Placement
+            SettingsCardRow(
+                configurationReview: .json("fileExplorer.placement"),
+                String(localized: "settings.app.fileExplorerPlacement", defaultValue: "File Explorer Location"),
+                subtitle: String(localized: "settings.app.fileExplorerPlacement.subtitle", defaultValue: "Where the file tree lives: the right sidebar's Files tab, the left sidebar below the workspace list, or both."),
+                controlWidth: Self.columnWidth
+            ) {
+                Picker("", selection: Binding(get: { fileExplorerPlacement.current }, set: { fileExplorerPlacement.set($0) })) {
+                    Text(String(localized: "settings.app.fileExplorerPlacement.right", defaultValue: "Right Sidebar")).tag("right")
+                    Text(String(localized: "settings.app.fileExplorerPlacement.left", defaultValue: "Left Sidebar")).tag("left")
+                    Text(String(localized: "settings.app.fileExplorerPlacement.both", defaultValue: "Both Sidebars")).tag("both")
+                }
+                .labelsHidden()
+                .pickerStyle(.menu)
+                .accessibilityIdentifier("SettingsFileExplorerPlacementPicker")
             }
             SettingsCardDivider()
 

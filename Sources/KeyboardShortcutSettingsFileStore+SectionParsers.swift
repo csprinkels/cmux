@@ -35,6 +35,16 @@ extension CmuxSettingsFileStore {
         } else if section.keys.contains("doubleClickAction") {
             logInvalid("fileExplorer.doubleClickAction", sourcePath: sourcePath)
         }
+
+        if let raw = jsonString(section["placement"]) {
+            if let placement = FileExplorerPlacement(rawValue: raw) {
+                snapshot.managedUserDefaults[FileExplorerPlacementSettings.key] = .string(placement.rawValue)
+            } else {
+                logInvalid("fileExplorer.placement", sourcePath: sourcePath)
+            }
+        } else if section.keys.contains("placement") {
+            logInvalid("fileExplorer.placement", sourcePath: sourcePath)
+        }
     }
 
     func parseSidebarWorkspaceTodosBeta(

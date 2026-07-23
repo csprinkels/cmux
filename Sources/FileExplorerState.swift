@@ -115,9 +115,17 @@ final class FileExplorerState: ObservableObject {
         _ mode: RightSidebarMode,
         defaults: UserDefaults
     ) -> RightSidebarMode {
+        // `fileExplorer.placement = "left"` retires the right sidebar's Files
+        // tool; every set (shortcut, CLI, restore) lands on Find instead so a
+        // hidden tab can never be the active mode.
+        let filesHidden = !FileExplorerPlacementSettings.current(defaults: defaults).showsRightSidebarFiles
+        let fallback: RightSidebarMode = filesHidden ? .find : .files
         if mode == .customSidebar {
-            return .files
+            return fallback
         }
-        return mode.isAvailable(defaults: defaults) ? mode : .files
+        if mode == .files, filesHidden {
+            return .find
+        }
+        return mode.isAvailable(defaults: defaults) ? mode : fallback
     }
 }

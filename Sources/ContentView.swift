@@ -852,6 +852,19 @@ struct ContentView: View {
     @State private var sidebarRenderWorkerClient: RenderWorkerClient?
     @StateObject private var fullscreenControlsViewModel = TitlebarControlsViewModel()
     @StateObject private var fileExplorerStore = FileExplorerStore()
+    /// Where the file tree is mounted (`fileExplorer.placement`): right
+    /// sidebar Files tab, left sidebar below the workspace list, or both.
+    @AppStorage(FileExplorerPlacementSettings.key) private var fileExplorerPlacementRaw = FileExplorerPlacementSettings.defaultValue.rawValue
+
+    private var leftSidebarFilesEnabled: Bool {
+        FileExplorerPlacementSettings.placement(forRawValue: fileExplorerPlacementRaw).showsLeftSidebarFiles
+    }
+    /// Monitor for the relocated sidebar footer while the experiment is on.
+    /// Not window-wired, so hover shortcut hints stay off there; buttons work.
+    @State private var leftSidebarFooterModifierMonitor = WindowScopedShortcutHintModifierMonitor(activation: .commandOnly)
+    /// True content height of the workspace list, reported by
+    /// `SidebarWorkspaceTableController`; sizes the left-sidebar file tree.
+    @State private var sidebarListContentHeight: CGFloat = 0
     @StateObject private var sessionIndexStore = SessionIndexStore()
     @StateObject private var selectedWorkspaceDirectoryObserver = SelectedWorkspaceDirectoryObserver()
     @State private var commandPaletteOverlayRenderModel = CommandPaletteOverlayRenderModel()
@@ -1685,10 +1698,11 @@ struct ContentView: View {
                 )
             },
             observedWindow: observedWindow,
+            hidesFooter: leftSidebarFilesEnabled,
             selection: $sidebarSelectionState.selection,
             selectedTabIds: $selectedTabIds, lastSidebarSelectionIndex: $lastSidebarSelectionIndex, sidebarRenderWorkerClient: $sidebarRenderWorkerClient
         )
-        return Group {
+        let gatedSidebar = Group {
             if CmuxFeatureFlags.shared.isAppKitSidebarListEnabled {
                 // FLAG(sidebar-appkit-list-experiment): parent-driven
                 // re-evaluations (divider width ticks, unrelated ContentView
@@ -1699,8 +1713,80 @@ struct ContentView: View {
                 sidebar
             }
         }
+        return Group {
+            if leftSidebarFilesEnabled {
+                // The file tree lives under the workspace list. The list keeps
+                // its native flexible layout (titlebar insets intact, never
+                // clipped); the tree takes exactly the space the list's real
+                // content doesn't need, so new workspaces push the tree down.
+                GeometryReader { geo in
+                    VStack(spacing: 0) {
+                        gatedSidebar
+                        leftSidebarFilesSection
+                            .frame(height: leftSidebarFilesHeight(available: geo.size.height))
+                        SidebarFooter(
+                            updateViewModel: updateViewModel,
+                            fileExplorerState: fileExplorerState,
+                            modifierKeyMonitor: leftSidebarFooterModifierMonitor,
+                            onSendFeedback: presentFeedbackComposer
+                        )
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                    }
+                }
+            } else {
+                gatedSidebar
+            }
+        }
+        .onReceive(
+            NotificationCenter.default.publisher(for: .sidebarWorkspaceListContentHeightDidChange)
+        ) { notification in
+            guard leftSidebarFilesEnabled else { return }
+            if let window = notification.object as? NSWindow, window !== observedWindow {
+                return
+            }
+            guard let height = notification.userInfo?[SidebarWorkspaceListContentHeight.userInfoKey] as? CGFloat else {
+                return
+            }
+            if abs(sidebarListContentHeight - height) > 0.5 {
+                sidebarListContentHeight = height
+            }
+        }
         .modifier(SidebarWidthFrameModifier(layout: sidebarLayout))
         .frame(maxHeight: .infinity, alignment: .topLeading)
+    }
+
+    /// The tree gets what the list's true content doesn't need, floored so it
+    /// stays usable (the list scrolls once workspaces outgrow their region).
+    /// The chrome constant covers fixed decor only: titlebar band, list
+    /// scroll insets, and the footer.
+    private func leftSidebarFilesHeight(available: CGFloat) -> CGFloat {
+        let listContent = sidebarListContentHeight > 0
+            ? sidebarListContentHeight
+            : available * 0.4
+        let chrome: CGFloat = 130
+        let remaining = available - listContent - chrome
+        return min(max(remaining, 160), available * 0.75)
+    }
+
+    private var leftSidebarFilesSection: some View {
+        VStack(spacing: 0) {
+            HStack {
+                Text(RightSidebarMode.files.label)
+                    .cmuxFont(size: 11, weight: .semibold)
+                    .foregroundStyle(Color(nsColor: .secondaryLabelColor))
+                Spacer(minLength: 0)
+            }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 4)
+            FileExplorerPanelView(
+                store: fileExplorerStore,
+                state: fileExplorerState,
+                onOpenFilePreview: { filePath in
+                    openFilePreviewFromSidebar(filePath: filePath)
+                },
+                placement: .pane
+            )
+        }
     }
 
     /// Native titlebar inset reported by AppKit. Standard mode follows cmux's visual chrome;
@@ -2186,6 +2272,46 @@ struct ContentView: View {
                         .padding(.leading, placement.leadingPadding)
                 }
             }
+            .overlay(alignment: .topTrailing) {
+                // Mouse affordance to reopen the right sidebar, mirroring the
+                // native left-sidebar toggle; hidden while the sidebar (whose
+                // mode bar carries the close button) is open.
+                if !rightSidebarVisible {
+                    rightSidebarReopenButton
+                        .frame(height: WindowChromeMetrics.appTitlebarHeight)
+                        .padding(.trailing, 6)
+                }
+            }
+    }
+
+    private var rightSidebarReopenButton: some View {
+        Button {
+            _ = AppDelegate.shared?.toggleRightSidebarInActiveMainWindow(preferredWindow: observedWindow)
+        } label: {
+            // 13pt to match the mode-bar icons and titlebar controls; the
+            // 10pt header size reads undersized next to the tab bar cluster.
+            CmuxSystemSymbolImage(
+                systemName: "sidebar.right",
+                pointSize: RightSidebarChromeControlStyle.modeIconSize,
+                weight: HeaderChromeIconStyle.weight,
+                appliesGlobalFontMagnification: true
+            )
+        }
+        .buttonStyle(RightSidebarHeaderIconButtonStyle(iconGeometryKeyPrefix: "rightSidebarReopenIcon"))
+        .frame(
+            width: RightSidebarChromeMetrics.headerControlSize,
+            height: RightSidebarChromeMetrics.headerControlSize
+        )
+        .safeHelp(
+            KeyboardShortcutSettings.Action.toggleRightSidebar.tooltip(
+                String(localized: "rightSidebar.reopen.tooltip", defaultValue: "Show right sidebar")
+            )
+        )
+        .accessibilityLabel(
+            String(localized: "rightSidebar.reopen.accessibilityLabel", defaultValue: "Show Right Sidebar")
+        )
+        .accessibilityIdentifier("RightSidebar.reopenButton")
+        .titlebarInteractiveControl()
     }
 
     private func syncTrafficLightInset(isMinimalMode: Bool? = nil) {
@@ -2450,7 +2576,8 @@ struct ContentView: View {
     private var shouldSyncFileExplorerStore: Bool {
         FileExplorerRootSyncPolicy.shouldSyncFileExplorerStore(
             isRightSidebarVisible: fileExplorerState.isVisible,
-            mode: fileExplorerState.mode
+            mode: fileExplorerState.mode,
+            leftSidebarShowsFiles: leftSidebarFilesEnabled && sidebarState.isVisible
         )
     }
 
@@ -3172,6 +3299,16 @@ struct ContentView: View {
         })
 
         view = AnyView(view.onChange(of: fileExplorerState.mode) { _, _ in
+            syncFileExplorerDirectory()
+        })
+
+        // The left-sidebar tree (fileExplorer.placement) changes which
+        // surfaces need the store: placement flips and left-sidebar
+        // visibility both re-evaluate the root sync gate.
+        view = AnyView(view.onChange(of: fileExplorerPlacementRaw) { _ in
+            syncFileExplorerDirectory()
+        })
+        view = AnyView(view.onChange(of: sidebarState.isVisible) { _ in
             syncFileExplorerDirectory()
         })
 
@@ -10404,6 +10541,7 @@ struct VerticalTabsSidebar: View, Equatable {
             && lhs.observedWindow === rhs.observedWindow
             && lhs.updateViewModel === rhs.updateViewModel
             && lhs.fileExplorerState === rhs.fileExplorerState
+            && lhs.hidesFooter == rhs.hidesFooter
     }
 
     var updateViewModel: UpdateStateModel
@@ -10413,6 +10551,9 @@ struct VerticalTabsSidebar: View, Equatable {
     let onToggleSidebar: () -> Void
     let onNewTab: () -> Void
     let observedWindow: NSWindow?
+    /// Left-sidebar-files experiment: the footer is re-mounted below the file
+    /// tree by ContentView, so the in-sidebar copy is suppressed.
+    var hidesFooter: Bool = false
     @EnvironmentObject var tabManager: TabManager
     // Observe the coalesced unread projection instead of the notification store
     // so notification churn (terminal/agent activity) no longer reconstructs
@@ -10861,13 +11002,15 @@ struct VerticalTabsSidebar: View, Equatable {
             } else {
                 extensionSidebarScrollArea(renderContext: renderContext)
             }
-            SidebarFooter(
-                updateViewModel: updateViewModel,
-                fileExplorerState: fileExplorerState,
-                modifierKeyMonitor: modifierKeyMonitor,
-                onSendFeedback: onSendFeedback
-            )
-            .frame(maxWidth: .infinity, alignment: .leading)
+            if !hidesFooter {
+                SidebarFooter(
+                    updateViewModel: updateViewModel,
+                    fileExplorerState: fileExplorerState,
+                    modifierKeyMonitor: modifierKeyMonitor,
+                    onSendFeedback: onSendFeedback
+                )
+                .frame(maxWidth: .infinity, alignment: .leading)
+            }
         }
         .accessibilityIdentifier("Sidebar")
         .ignoresSafeArea()

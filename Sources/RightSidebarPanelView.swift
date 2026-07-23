@@ -70,7 +70,14 @@ enum RightSidebarContentMountPolicy {
 }
 
 enum FileExplorerRootSyncPolicy {
-    static func shouldSyncFileExplorerStore(isRightSidebarVisible: Bool, mode: RightSidebarMode) -> Bool {
+    static func shouldSyncFileExplorerStore(
+        isRightSidebarVisible: Bool,
+        mode: RightSidebarMode,
+        leftSidebarShowsFiles: Bool = false
+    ) -> Bool {
+        // A visible left-sidebar tree (fileExplorer.placement left/both)
+        // needs the store regardless of right-sidebar state.
+        if leftSidebarShowsFiles { return true }
         guard isRightSidebarVisible else { return false }
         switch mode {
         case .files, .find:
@@ -144,8 +151,18 @@ struct RightSidebarPanelView: View {
         FeedCoordinator.shared.store?.pending.count ?? 0
     }
 
+    /// `fileExplorer.placement`: hides the Files tab when the tree lives in
+    /// the left sidebar only.
+    @AppStorage(FileExplorerPlacementSettings.key)
+    private var fileExplorerPlacementRaw = FileExplorerPlacementSettings.defaultValue.rawValue
+
+    private var showsFilesMode: Bool {
+        FileExplorerPlacementSettings.placement(forRawValue: fileExplorerPlacementRaw).showsRightSidebarFiles
+    }
+
     private var availableModes: [RightSidebarMode] {
         RightSidebarMode.availableModes(feedEnabled: feedEnabled, dockEnabled: dockEnabled)
+            .filter { showsFilesMode || $0 != .files }
     }
 
     private var modeBarItems: [RightSidebarModeBarItem] {
@@ -175,10 +192,11 @@ struct RightSidebarPanelView: View {
     var body: some View {
         VStack(spacing: 0) {
             modeBar
-                .rightSidebarChromeBottomBorder()
             contentForMode
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
+        .onAppear { refreshModeAvailabilityAndFocusIfNeeded() }
+        .onChange(of: showsFilesMode) { _, _ in refreshModeAvailabilityAndFocusIfNeeded() }
         .shortcutHintVisibilityAnimation(value: focusShortcutHintAnimationValue)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(
@@ -246,9 +264,6 @@ struct RightSidebarPanelView: View {
                     }
                 }
                 Spacer(minLength: 0)
-                if fileExplorerState.mode.canOpenAsPane {
-                    openAsPaneButton(mode: fileExplorerState.mode)
-                }
                 closeButton
             }
         }
@@ -263,33 +278,6 @@ struct RightSidebarPanelView: View {
             isVisible: true,
             titlebarHeight: titlebarHeight
         )
-    }
-
-    private func openAsPaneButton(mode: RightSidebarMode) -> some View {
-        Button {
-            onOpenAsPane(mode)
-        } label: {
-            HeaderChromeIconStyle.symbol("rectangle.split.2x1")
-        }
-        .buttonStyle(RightSidebarHeaderIconButtonStyle(iconGeometryKeyPrefix: "rightSidebarHeaderOpenAsPaneIcon"))
-        .frame(
-            width: RightSidebarChromeMetrics.headerControlSize,
-            height: RightSidebarChromeMetrics.headerControlSize
-        )
-        .reportRightSidebarChromeNamedGeometryForBonsplitUITest(
-            keyPrefix: "rightSidebarHeaderOpenAsPane",
-            isVisible: true
-        )
-        .rightSidebarHeaderControlAlignment()
-        .safeHelp(String(localized: "rightSidebar.openAsPane.tooltip", defaultValue: "Open as pane"))
-        .accessibilityLabel(
-            String.localizedStringWithFormat(
-                String(localized: "rightSidebar.openAsPane.accessibilityLabel", defaultValue: "Open %@ as Pane"),
-                mode.label
-            )
-        )
-        .accessibilityIdentifier("RightSidebar.openAsPaneButton")
-        .titlebarInteractiveControl()
     }
 
     private var closeButton: some View {

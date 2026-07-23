@@ -242283,6 +242283,125 @@
           }
         }
       }
+    },
+    "rightSidebar.reopen.tooltip": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Show right sidebar"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "右サイドバーを表示"
+          }
+        }
+      }
+    },
+    "rightSidebar.reopen.accessibilityLabel": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Show Right Sidebar"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "右サイドバーを表示"
+          }
+        }
+      }
+    },
+    "settings.app.fileExplorerPlacement": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "File Explorer Location"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ファイルエクスプローラーの場所"
+          }
+        }
+      }
+    },
+    "settings.app.fileExplorerPlacement.subtitle": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Where the file tree lives: the right sidebar's Files tab, the left sidebar below the workspace list, or both."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ファイルツリーの表示場所：右サイドバーの「ファイル」タブ、左サイドバーのワークスペース一覧の下、または両方。"
+          }
+        }
+      }
+    },
+    "settings.app.fileExplorerPlacement.right": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Right Sidebar"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "右サイドバー"
+          }
+        }
+      }
+    },
+    "settings.app.fileExplorerPlacement.left": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Left Sidebar"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "左サイドバー"
+          }
+        }
+      }
+    },
+    "settings.app.fileExplorerPlacement.both": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Both Sidebars"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "両方のサイドバー"
+          }
+        }
+      }
     }
   },
   "version": "1.0"

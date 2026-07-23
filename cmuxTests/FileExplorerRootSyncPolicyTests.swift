@@ -45,6 +45,21 @@ struct FileExplorerRootSyncPolicyTests {
             )
         }
     }
+
+    @Test("A visible left-sidebar tree syncs regardless of right sidebar state")
+    func leftSidebarTreeSyncsRegardlessOfRightSidebar() {
+        for mode in RightSidebarMode.allCases {
+            for rightVisible in [false, true] {
+                #expect(
+                    FileExplorerRootSyncPolicy.shouldSyncFileExplorerStore(
+                        isRightSidebarVisible: rightVisible,
+                        mode: mode,
+                        leftSidebarShowsFiles: true
+                    )
+                )
+            }
+        }
+    }
 }
 
 @MainActor
