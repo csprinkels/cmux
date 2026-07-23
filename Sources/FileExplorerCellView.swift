@@ -106,8 +106,13 @@ final class FileExplorerCellView: NSTableCellView {
             }
         } else {
             if node.isDirectory {
+                // Terminal Stealth uses the outlined folder to match the
+                // chrome's outlined icon language.
                 iconView.apply(CmuxResolvedIconRequest(
-                    source: .systemSymbol(name: "folder.fill", accessibilityDescription: nil),
+                    source: .systemSymbol(
+                        name: style == .terminalStealth ? "folder" : "folder.fill",
+                        accessibilityDescription: nil
+                    ),
                     size: NSSize(width: style.iconSize, height: style.iconSize),
                     tintColor: style.folderIconTint,
                     symbolWeight: style.iconWeight

@@ -95,6 +95,7 @@ struct FileExplorerPanelView: NSViewRepresentable {
         private var lastRootNodeCount: Int = -1
         private var observationCancellable: AnyCancellable?
         private var styleObserver: Any?
+        private var terminalThemeObservers: [Any] = []
         private var isUpdatingOutlineProgrammatically = false
 
         init(
@@ -116,15 +117,31 @@ struct FileExplorerPanelView: NSViewRepresentable {
             styleObserver = NotificationCenter.default.addObserver(
                 forName: .fileExplorerStyleDidChange, object: nil, queue: .main
             ) { [weak self] _ in
-                guard let self, let outlineView = self.outlineView else { return }
-                let style = FileExplorerStyle.current
-                self.withProgrammaticOutlineUpdate {
-                    outlineView.indentationPerLevel = style.indentation
-                    outlineView.noteHeightOfRows(withIndexesChanged: IndexSet(0..<outlineView.numberOfRows))
-                    outlineView.reloadData()
-                    self.restoreExpansionState(self.store.expandedPaths, in: outlineView)
-                    self.applyStoredSelection(in: outlineView, fallbackToFirstVisible: false, scroll: false)
+                self?.reloadOutlineForStyleChange()
+            }
+            // Terminal Stealth derives font/colors from the Ghostty theme;
+            // refresh the tree when the terminal config changes, like the
+            // code editor webview does.
+            terminalThemeObservers = [.ghosttyConfigDidReload, .ghosttyDefaultBackgroundDidChange].map { name in
+                NotificationCenter.default.addObserver(
+                    forName: name, object: nil, queue: .main
+                ) { [weak self] _ in
+                    FileExplorerTerminalTheme.invalidate()
+                    guard FileExplorerStyle.current == .terminalStealth else { return }
+                    self?.reloadOutlineForStyleChange()
                 }
+            }
+        }
+
+        private func reloadOutlineForStyleChange() {
+            guard let outlineView else { return }
+            let style = FileExplorerStyle.current
+            withProgrammaticOutlineUpdate {
+                outlineView.indentationPerLevel = style.indentation
+                outlineView.noteHeightOfRows(withIndexesChanged: IndexSet(0..<outlineView.numberOfRows))
+                outlineView.reloadData()
+                restoreExpansionState(store.expandedPaths, in: outlineView)
+                applyStoredSelection(in: outlineView, fallbackToFirstVisible: false, scroll: false)
             }
         }
 
@@ -153,6 +170,9 @@ struct FileExplorerPanelView: NSViewRepresentable {
 
         deinit {
             if let observer = styleObserver {
+                NotificationCenter.default.removeObserver(observer)
+            }
+            for observer in terminalThemeObservers {
                 NotificationCenter.default.removeObserver(observer)
             }
         }

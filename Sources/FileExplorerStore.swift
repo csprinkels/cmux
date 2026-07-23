@@ -29,7 +29,7 @@ enum FileExplorerStyle: Int, CaseIterable {
         switch self {
         case .liquidGlass: baseHeight = 28
         case .highDensity: baseHeight = 20
-        case .terminalStealth: baseHeight = 24
+        case .terminalStealth: baseHeight = 23
         case .proStudio: baseHeight = 32
         case .finder: baseHeight = 26
         }
@@ -50,7 +50,7 @@ enum FileExplorerStyle: Int, CaseIterable {
         switch self {
         case .liquidGlass: return 16
         case .highDensity: return 14
-        case .terminalStealth: return 12
+        case .terminalStealth: return 14
         case .proStudio: return 18
         case .finder: return 18
         }
@@ -70,7 +70,9 @@ enum FileExplorerStyle: Int, CaseIterable {
         switch self {
         case .liquidGlass: return GlobalFontMagnification.systemFont(ofSize: 13, weight: .medium)
         case .highDensity: return GlobalFontMagnification.systemFont(ofSize: 11, weight: .regular)
-        case .terminalStealth: return GlobalFontMagnification.monospacedSystemFont(ofSize: 12, weight: .regular)
+        // Terminal Stealth rows use the Ghostty terminal font, like the
+        // code editor and diff viewer.
+        case .terminalStealth: return FileExplorerTerminalTheme.nameFont
         case .proStudio: return GlobalFontMagnification.systemFont(ofSize: 14, weight: .semibold)
         case .finder: return GlobalFontMagnification.systemFont(ofSize: 13, weight: .regular)
         }
@@ -106,30 +108,6 @@ enum FileExplorerStyle: Int, CaseIterable {
         }
     }
 
-    var selectionColor: NSColor {
-        switch self {
-        case .liquidGlass: return .controlAccentColor.withAlphaComponent(0.15)
-        case .highDensity: return .selectedContentBackgroundColor
-        case .terminalStealth: return .controlAccentColor
-        case .proStudio: return .controlAccentColor
-        case .finder: return .controlAccentColor.withAlphaComponent(0.15)
-        }
-    }
-
-    var hoverColor: NSColor {
-        switch self {
-        case .liquidGlass: return .labelColor.withAlphaComponent(0.05)
-        case .highDensity: return .white.withAlphaComponent(0.05)
-        case .terminalStealth: return .white.withAlphaComponent(0.03)
-        case .proStudio: return .white.withAlphaComponent(0.1)
-        case .finder: return .labelColor.withAlphaComponent(0.04)
-        }
-    }
-
-    var usesBorderSelection: Bool {
-        self == .terminalStealth
-    }
-
     var fileIconTint: NSColor {
         palette.fileIconTint
     }
@@ -146,7 +124,9 @@ enum FileExplorerStyle: Int, CaseIterable {
         switch self {
         case .liquidGlass: .liquidGlass
         case .highDensity: .highDensity
-        case .terminalStealth: .terminalStealth
+        // Ghostty-derived; falls back to the static palette when the
+        // terminal theme is unusable.
+        case .terminalStealth: FileExplorerTerminalTheme.palette
         case .proStudio: .proStudio
         case .finder: .finder
         }

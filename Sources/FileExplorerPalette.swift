@@ -50,6 +50,28 @@ struct FileExplorerPalette {
         untrackedText: terminalUntracked
     )
 
+    /// Palette derived from the user's Ghostty terminal theme (used by
+    /// Terminal Stealth via `FileExplorerTerminalTheme`): git states take the
+    /// ANSI colors the same way the diff viewer and code editor do, icons
+    /// take the terminal foreground.
+    static func terminalDerived(
+        foreground: NSColor,
+        red: NSColor,
+        green: NSColor,
+        yellow: NSColor,
+        blue: NSColor
+    ) -> FileExplorerPalette {
+        FileExplorerPalette(
+            fileIconTint: foreground.withAlphaComponent(0.6),
+            folderIconTint: foreground.withAlphaComponent(0.6),
+            modifiedText: yellow,
+            addedText: green,
+            deletedText: red,
+            renamedText: blue,
+            untrackedText: foreground.withAlphaComponent(0.7)
+        )
+    }
+
     static let proStudio = FileExplorerPalette(
         fileIconTint: neutralIcon,
         folderIconTint: blueIcon,
