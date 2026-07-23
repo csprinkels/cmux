@@ -1,3 +1,4 @@
+import CmuxFoundation
 import CmuxGit
 import Foundation
 import Observation
@@ -25,6 +26,10 @@ final class SourceControlStore {
     private let runner: GitCommandRunner
     private var workspaceDirectory: String?
     private var refreshGeneration = 0
+    private var gitWatchers: [FileWatcher] = []
+    private var gitWatchTasks: [Task<Void, Never>] = []
+    private var watchedRepositoryRoot: URL?
+    private var pendingWatchRefresh: Task<Void, Never>?
 
     init(runner: GitCommandRunner = GitCommandRunner()) {
         self.runner = runner
@@ -47,6 +52,7 @@ final class SourceControlStore {
         entries = []
         branches = []
         lastErrorMessage = nil
+        stopGitWatchers()
         refresh()
     }
 
@@ -71,6 +77,62 @@ final class SourceControlStore {
             repositoryRoot = root
             entries = status
             branches = branchList
+            installGitWatchersIfNeeded(root: root)
+        }
+    }
+
+    // MARK: - Git change watching
+
+    /// Watches the repository's metadata paths (HEAD, index, refs — the same
+    /// set the sidebar's branch label watches via `GitMetadataService`) so
+    /// commits and stages made outside this tool show up without a manual
+    /// refresh.
+    private func installGitWatchersIfNeeded(root: URL) {
+        guard watchedRepositoryRoot != root else { return }
+        stopGitWatchers()
+        watchedRepositoryRoot = root
+        Task { [weak self] in
+            let paths = await GitMetadataService().watchedPaths(for: root.path)
+                ?? [root.appendingPathComponent(".git", isDirectory: true).path]
+            guard let self, self.watchedRepositoryRoot == root else { return }
+            for path in paths {
+                let watcher = FileWatcher(path: path, throttle: .milliseconds(300))
+                self.gitWatchers.append(watcher)
+                self.gitWatchTasks.append(Task { @MainActor [weak self] in
+                    for await _ in watcher.events {
+                        self?.scheduleWatchRefresh()
+                    }
+                })
+            }
+        }
+    }
+
+    private func stopGitWatchers() {
+        for task in gitWatchTasks {
+            task.cancel()
+        }
+        gitWatchTasks = []
+        let watchers = gitWatchers
+        gitWatchers = []
+        watchedRepositoryRoot = nil
+        pendingWatchRefresh?.cancel()
+        pendingWatchRefresh = nil
+        Task {
+            for watcher in watchers {
+                await watcher.stop()
+            }
+        }
+    }
+
+    /// Coalesces bursts from several watchers (index, HEAD, and refs often
+    /// change together) into one refresh. Bounded, cancellable delay — the
+    /// coalescing window is the intended behavior, not a poll.
+    private func scheduleWatchRefresh() {
+        pendingWatchRefresh?.cancel()
+        pendingWatchRefresh = Task { [weak self] in
+            try? await Task.sleep(for: .milliseconds(200))
+            guard !Task.isCancelled else { return }
+            self?.refresh()
         }
     }
 

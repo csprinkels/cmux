@@ -1619,6 +1619,7 @@
               "switchRightSidebarToSessions",
               "switchRightSidebarToFeed",
               "switchRightSidebarToDock",
+              "switchRightSidebarToSourceControl",
               "triggerFlash",
               "nextSurface",
               "prevSurface",

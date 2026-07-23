@@ -119,6 +119,41 @@ extension ContentView {
         }
     }
 
+    static func commandPaletteSourceControlCommandContributions() -> [CommandPaletteCommandContribution] {
+        func constant(_ value: String) -> (CommandPaletteContextSnapshot) -> String {
+            { _ in value }
+        }
+        let subtitle = constant(
+            String(localized: "command.sourceControl.subtitle", defaultValue: "Source Control")
+        )
+        return [
+            CommandPaletteCommandContribution(
+                commandId: "palette.gitCommit",
+                title: constant(String(localized: "command.gitCommit.title", defaultValue: "Git: Commit…")),
+                subtitle: subtitle,
+                keywords: ["git", "commit", "source", "control", "message"]
+            ),
+            CommandPaletteCommandContribution(
+                commandId: "palette.gitPush",
+                title: constant(String(localized: "command.gitPush.title", defaultValue: "Git: Push")),
+                subtitle: subtitle,
+                keywords: ["git", "push", "source", "control", "upload"]
+            ),
+            CommandPaletteCommandContribution(
+                commandId: "palette.gitPull",
+                title: constant(String(localized: "command.gitPull.title", defaultValue: "Git: Pull")),
+                subtitle: subtitle,
+                keywords: ["git", "pull", "source", "control", "fetch"]
+            ),
+            CommandPaletteCommandContribution(
+                commandId: "palette.gitStageAll",
+                title: constant(String(localized: "command.gitStageAll.title", defaultValue: "Git: Stage All Changes")),
+                subtitle: subtitle,
+                keywords: ["git", "stage", "add", "all", "source", "control"]
+            ),
+        ]
+    }
+
     static func commandPaletteRightSidebarToolPaneCommandContributions() -> [CommandPaletteCommandContribution] {
         func constant(_ value: String) -> (CommandPaletteContextSnapshot) -> String {
             { _ in value }

@@ -50,7 +50,7 @@ enum RightSidebarMode: String, CaseIterable, Codable, Sendable {
         switch self {
         case .files: return .switchRightSidebarToFiles
         case .find: return .switchRightSidebarToFind
-        case .sourceControl: return nil
+        case .sourceControl: return .switchRightSidebarToSourceControl
         case .sessions: return .switchRightSidebarToSessions
         case .feed: return .switchRightSidebarToFeed
         case .dock: return .switchRightSidebarToDock

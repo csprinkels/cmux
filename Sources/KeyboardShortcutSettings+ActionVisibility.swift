@@ -6,7 +6,7 @@ extension KeyboardShortcutSettings.Action {
              .switchRightSidebarToFind,
              .switchRightSidebarToSessions,
              .switchRightSidebarToFeed,
-             .switchRightSidebarToDock:
+             .switchRightSidebarToDock, .switchRightSidebarToSourceControl:
             return false
         default:
             return true

@@ -275,6 +275,9 @@ struct SourceControlView: View {
                     .frame(maxWidth: .infinity)
             }
             .controlSize(.small)
+            // ⌘⏎ commits from inside the message field (Return inserts a
+            // newline in the vertical-axis TextField).
+            .keyboardShortcut(.return, modifiers: .command)
             .disabled(!store.canCommit)
         }
         .padding(.horizontal, 12)

@@ -7193,6 +7193,7 @@ struct ContentView: View {
             )
         }
         contributions.append(contentsOf: Self.commandPaletteRightSidebarModeCommandContributions())
+        contributions.append(contentsOf: Self.commandPaletteSourceControlCommandContributions())
         contributions.append(contentsOf: Self.commandPaletteRightSidebarToolPaneCommandContributions())
         contributions.append(
             CommandPaletteCommandContribution(
@@ -8378,6 +8379,18 @@ struct ContentView: View {
             registry.register(commandId: descriptor.commandId) {
                 handleCommandPaletteRightSidebarToolPane(descriptor.mode)
             }
+        }
+        registry.register(commandId: "palette.gitCommit") {
+            handleCommandPaletteRightSidebarMode(.sourceControl, observedWindow: observedWindow)
+        }
+        registry.register(commandId: "palette.gitPush") {
+            sourceControlStore.push()
+        }
+        registry.register(commandId: "palette.gitPull") {
+            sourceControlStore.pull()
+        }
+        registry.register(commandId: "palette.gitStageAll") {
+            sourceControlStore.stageAll()
         }
         registry.register(commandId: "palette.toggleMatchTerminalBackground") {
             sidebarMatchTerminalBackground.toggle()
