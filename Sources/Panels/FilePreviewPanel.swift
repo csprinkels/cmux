@@ -1301,6 +1301,9 @@ final class FilePreviewPanel: Panel, ObservableObject, FilePreviewTextEditingPan
             originalTextContent = ""
             isDirty = false
             isFileUnavailable = true
+            // The disk baseline moved (to "nothing on disk"); keep the token
+            // contract so the web editor reconciles on its next sync.
+            textDiskSyncToken += 1
             return
         case .loaded(let content, let encoding):
             if !replacingDirtyContent && isDirty {

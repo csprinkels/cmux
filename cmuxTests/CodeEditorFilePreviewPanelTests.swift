@@ -201,6 +201,8 @@ struct CodeEditorFilePreviewPanelTests {
         await panel.loadTextContent(replacingDirtyContent: false).value
 
         #expect(await waitUntil { panel.diskTextContent == "new\n" })
+        // The dirty native snapshot must survive the baseline move.
+        #expect(panel.textContent == "old\n")
         #expect(panel.isDirty)
         #expect(panel.textDiskSyncToken > initialToken)
     }

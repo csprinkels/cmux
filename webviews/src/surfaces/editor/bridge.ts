@@ -6,6 +6,22 @@
  * via `window.cmuxEditorBridge.receive`.
  */
 
+/**
+ * Ghostty terminal theme slice mirrored into the editor so code renders with
+ * the same colors and font as the terminal and the diff viewer. Shape matches
+ * the fields `AgentChatThemePayload` exposes on the Swift side.
+ */
+export type EditorTerminalTheme = {
+  background: string;
+  foreground: string;
+  /** 16 ANSI colors; syntax scopes map onto these like the diff viewer. */
+  palette: string[];
+  selectionBackground?: string | null;
+  cursorColor?: string | null;
+  fontFamily?: string | null;
+  fontSize?: number | null;
+};
+
 export type EditorTheme = {
   isDark: boolean;
   pageBackground: string;
@@ -21,6 +37,8 @@ export type EditorTheme = {
   accentSoft: string;
   danger: string;
   shadow: string;
+  /** Present when the host resolved the Ghostty terminal theme. */
+  terminal?: EditorTerminalTheme | null;
 };
 
 export type EditorCopy = {

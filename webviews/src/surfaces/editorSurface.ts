@@ -41,10 +41,19 @@ import {
   type EditorTheme,
 } from "./editor/bridge";
 import { DocumentSession } from "./editor/documentSession";
+import { hasUsableTerminalPalette, terminalHighlightStyle } from "./editor/terminalHighlight";
 
 const DIRTY_NOTIFY_DEBOUNCE_MS = 100;
 
+// Chrome inside the webview (banner, search panel) follows the native cmux
+// vocabulary: 11px system labels, borderless pill buttons that fill on hover
+// (Color.primary at 5-14% in AppKit; color-mix on --cmux-editor-fg here),
+// 5px radii, hairline separators. See RightSidebarChromeStyle.swift and
+// PanelContentView.swift for the AppKit reference values.
 const surfaceStyles = `
+  * {
+    box-sizing: border-box;
+  }
   html, body {
     margin: 0;
     height: 100%;
@@ -56,15 +65,22 @@ const surfaceStyles = `
     flex-direction: column;
     height: 100%;
   }
+  button, input {
+    font: inherit;
+  }
+  button {
+    cursor: default;
+  }
   .cmux-editor-banner {
     display: none;
     align-items: center;
     gap: 8px;
-    padding: 6px 10px;
-    font: 12px -apple-system, system-ui, sans-serif;
+    min-height: 30px;
+    padding: 4px 12px;
+    font: 11px -apple-system, system-ui, sans-serif;
     color: var(--cmux-editor-fg, #000);
     background: var(--cmux-editor-surface, rgba(127, 127, 127, 0.15));
-    border-bottom: 1px solid var(--cmux-editor-border, rgba(127, 127, 127, 0.4));
+    border-bottom: 1px solid var(--cmux-editor-border, rgba(127, 127, 127, 0.25));
   }
   .cmux-editor-banner.cmux-editor-banner-visible {
     display: flex;
@@ -75,21 +91,37 @@ const surfaceStyles = `
     text-overflow: ellipsis;
     white-space: nowrap;
   }
+  .cmux-editor-banner-error {
+    background: color-mix(in srgb, var(--cmux-editor-danger, #b3261e) 11%, transparent);
+    border-bottom-color: color-mix(in srgb, var(--cmux-editor-danger, #b3261e) 46%, transparent);
+  }
   .cmux-editor-banner-error .cmux-editor-banner-message {
-    color: var(--cmux-editor-danger, #b3261e);
+    color: color-mix(in srgb, var(--cmux-editor-danger, #b3261e) 88%, var(--cmux-editor-fg, #000));
   }
   .cmux-editor-banner button {
     font: inherit;
-    padding: 2px 10px;
+    padding: 3px 10px;
     border-radius: 5px;
-    border: 1px solid var(--cmux-editor-border, rgba(127, 127, 127, 0.4));
+    border: none;
     background: transparent;
     color: var(--cmux-editor-fg, #000);
-    cursor: pointer;
+  }
+  .cmux-editor-banner button:hover {
+    background: color-mix(in srgb, var(--cmux-editor-fg, currentColor) 8%, transparent);
+  }
+  .cmux-editor-banner button:active {
+    background: color-mix(in srgb, var(--cmux-editor-fg, currentColor) 14%, transparent);
   }
   .cmux-editor-banner button.cmux-editor-banner-primary {
-    background: var(--cmux-editor-accent-soft, rgba(0, 122, 255, 0.18));
-    border-color: var(--cmux-editor-accent, #007aff);
+    background: var(--cmux-editor-accent-soft, rgba(127, 127, 127, 0.18));
+    color: var(--cmux-editor-fg, #000);
+  }
+  .cmux-editor-banner button.cmux-editor-banner-primary:hover {
+    background: color-mix(in srgb, var(--cmux-editor-accent, currentColor) 30%, transparent);
+  }
+  .cmux-editor-banner button:focus-visible {
+    outline: 2px solid color-mix(in srgb, var(--cmux-editor-fg, currentColor) 36%, transparent);
+    outline-offset: 1px;
   }
   .cmux-editor-container {
     flex: 1;
@@ -104,14 +136,19 @@ const editorChrome = EditorView.theme({
   "&": {
     backgroundColor: "var(--cmux-editor-bg, transparent)",
     color: "var(--cmux-editor-fg, inherit)",
-    fontSize: "12px",
+    fontSize: "var(--cmux-editor-font-size, 12px)",
+  },
+  "&.cm-focused": {
+    outline: "none",
   },
   ".cm-scroller": {
-    fontFamily: "ui-monospace, 'SF Mono', Menlo, monospace",
+    fontFamily: "var(--cmux-editor-font-family, ui-monospace, 'SF Mono', Menlo, monospace)",
     lineHeight: "1.5",
+    scrollbarWidth: "thin",
+    scrollbarColor: "color-mix(in srgb, var(--cmux-editor-muted, currentColor) 28%, transparent) transparent",
   },
   ".cm-content": {
-    caretColor: "var(--cmux-editor-fg, auto)",
+    caretColor: "var(--cmux-editor-caret, var(--cmux-editor-fg, auto))",
   },
   ".cm-gutters": {
     backgroundColor: "transparent",
@@ -126,40 +163,171 @@ const editorChrome = EditorView.theme({
     backgroundColor: "color-mix(in srgb, var(--cmux-editor-fg, currentColor) 5%, transparent)",
   },
   "&.cm-focused .cm-cursor": {
-    borderLeftColor: "var(--cmux-editor-fg, auto)",
+    borderLeftColor: "var(--cmux-editor-caret, var(--cmux-editor-fg, auto))",
   },
   "&.cm-focused > .cm-scroller .cm-selectionLayer .cm-selectionBackground, .cm-selectionBackground, & ::selection": {
-    backgroundColor: "var(--cmux-editor-accent-soft, rgba(0, 122, 255, 0.2)) !important",
+    backgroundColor: "var(--cmux-editor-selection, var(--cmux-editor-accent-soft, rgba(0, 122, 255, 0.2))) !important",
   },
+  ".cm-selectionMatch": {
+    backgroundColor: "color-mix(in srgb, var(--cmux-editor-fg, currentColor) 12%, transparent)",
+  },
+  ".cm-searchMatch": {
+    backgroundColor: "color-mix(in srgb, var(--cmux-editor-accent, currentColor) 25%, transparent)",
+  },
+  ".cm-searchMatch.cm-searchMatch-selected": {
+    backgroundColor: "color-mix(in srgb, var(--cmux-editor-accent, currentColor) 45%, transparent)",
+    outline: "1px solid var(--cmux-editor-accent, currentColor)",
+  },
+  "&.cm-focused .cm-matchingBracket": {
+    backgroundColor: "color-mix(in srgb, var(--cmux-editor-fg, currentColor) 15%, transparent)",
+    outline: "1px solid color-mix(in srgb, var(--cmux-editor-fg, currentColor) 30%, transparent)",
+  },
+  "&.cm-focused .cm-nonmatchingBracket": {
+    backgroundColor: "color-mix(in srgb, var(--cmux-editor-danger, currentColor) 30%, transparent)",
+  },
+  ".cm-foldPlaceholder": {
+    backgroundColor: "color-mix(in srgb, var(--cmux-editor-fg, currentColor) 10%, transparent)",
+    border: "1px solid var(--cmux-editor-border, rgba(127, 127, 127, 0.25))",
+    color: "var(--cmux-editor-muted, inherit)",
+    borderRadius: "4px",
+    padding: "0 4px",
+  },
+  ".cm-foldGutter span": {
+    opacity: "0",
+    transition: "opacity 0.1s",
+  },
+  ".cm-gutters:hover .cm-foldGutter span": {
+    opacity: "1",
+  },
+  ".cm-dropCursor": {
+    borderLeftColor: "var(--cmux-editor-caret, var(--cmux-editor-fg, currentColor))",
+  },
+  ".cm-specialChar": {
+    color: "var(--cmux-editor-danger, inherit)",
+  },
+  // Panels (search, go-to-line) are chrome, not code: native 11px UI font,
+  // borderless pill buttons, hairline separators.
   ".cm-panels": {
     backgroundColor: "var(--cmux-editor-panel, Canvas)",
     color: "var(--cmux-editor-fg, inherit)",
     border: "none",
+    font: "11px -apple-system, system-ui, sans-serif",
   },
   ".cm-panels.cm-panels-top": {
-    borderBottom: "1px solid var(--cmux-editor-border, rgba(127, 127, 127, 0.4))",
+    borderBottom: "1px solid var(--cmux-editor-border, rgba(127, 127, 127, 0.25))",
   },
   ".cm-panels.cm-panels-bottom": {
-    borderTop: "1px solid var(--cmux-editor-border, rgba(127, 127, 127, 0.4))",
+    borderTop: "1px solid var(--cmux-editor-border, rgba(127, 127, 127, 0.25))",
+  },
+  ".cm-panel.cm-search": {
+    padding: "5px 12px 6px 8px",
+  },
+  ".cm-panels .cm-textfield": {
+    backgroundColor: "var(--cmux-editor-input, color-mix(in srgb, var(--cmux-editor-fg, currentColor) 7%, transparent))",
+    border: "1px solid var(--cmux-editor-border, rgba(127, 127, 127, 0.25))",
+    borderRadius: "5px",
+    padding: "3px 8px",
+    color: "var(--cmux-editor-fg, inherit)",
+    font: "inherit",
+    outline: "none",
+  },
+  ".cm-panels .cm-textfield:focus": {
+    borderColor: "color-mix(in srgb, var(--cmux-editor-accent, currentColor) 60%, var(--cmux-editor-border, transparent))",
+  },
+  ".cm-panels .cm-textfield::placeholder": {
+    color: "var(--cmux-editor-muted, inherit)",
+  },
+  ".cm-panels .cm-button": {
+    backgroundImage: "none",
+    backgroundColor: "transparent",
+    border: "none",
+    borderRadius: "5px",
+    padding: "3px 10px",
+    color: "var(--cmux-editor-fg, inherit)",
+    font: "inherit",
+  },
+  ".cm-panels .cm-button:hover": {
+    backgroundColor: "color-mix(in srgb, var(--cmux-editor-fg, currentColor) 8%, transparent)",
+  },
+  ".cm-panels .cm-button:active": {
+    backgroundImage: "none",
+    backgroundColor: "color-mix(in srgb, var(--cmux-editor-fg, currentColor) 14%, transparent)",
+  },
+  ".cm-panels .cm-button:focus-visible, .cm-panels input[type=checkbox]:focus-visible": {
+    outline: "2px solid color-mix(in srgb, var(--cmux-editor-fg, currentColor) 36%, transparent)",
+    outlineOffset: "1px",
+  },
+  ".cm-panel.cm-search label": {
+    color: "var(--cmux-editor-muted, inherit)",
+    fontSize: "inherit",
+  },
+  ".cm-panel.cm-search input[type=checkbox]": {
+    accentColor: "var(--cmux-editor-accent, auto)",
+  },
+  ".cm-panel.cm-search button[name=close]": {
+    color: "var(--cmux-editor-muted, inherit)",
+    fontSize: "14px",
+    width: "20px",
+    height: "20px",
+    lineHeight: "20px",
+    borderRadius: "5px",
+    top: "4px",
+    right: "6px",
+  },
+  ".cm-panel.cm-search button[name=close]:hover": {
+    color: "var(--cmux-editor-fg, inherit)",
+    backgroundColor: "color-mix(in srgb, var(--cmux-editor-fg, currentColor) 8%, transparent)",
   },
 });
 
 function applyThemeVariables(theme: EditorTheme): void {
   const style = document.documentElement.style;
-  style.setProperty("--cmux-editor-bg", theme.pageBackground);
-  style.setProperty("--cmux-editor-fg", theme.text);
+  const terminal = hasUsableTerminalPalette(theme.terminal) ? theme.terminal : null;
+  // Terminal-themed mode: the Swift host already paints the Ghostty
+  // background (opacity-aware) behind the webview, so the page goes
+  // transparent and text/caret/selection take the terminal's colors.
+  style.setProperty("--cmux-editor-bg", terminal ? "transparent" : theme.pageBackground);
+  style.setProperty("--cmux-editor-fg", terminal ? terminal.foreground : theme.text);
   style.setProperty("--cmux-editor-muted", theme.mutedText);
   style.setProperty("--cmux-editor-accent", theme.accent);
   style.setProperty("--cmux-editor-accent-soft", theme.accentSoft);
   style.setProperty("--cmux-editor-border", theme.border);
   style.setProperty("--cmux-editor-surface", theme.surfaceBackground);
   style.setProperty("--cmux-editor-panel", theme.surfaceElevatedBackground);
+  style.setProperty("--cmux-editor-input", theme.inputBackground);
   style.setProperty("--cmux-editor-danger", theme.danger);
+  setOrClear(style, "--cmux-editor-caret", terminal?.cursorColor || null);
+  setOrClear(style, "--cmux-editor-selection", terminal?.selectionBackground || null);
+  setOrClear(
+    style,
+    "--cmux-editor-font-family",
+    terminal?.fontFamily
+      ? `"${terminal.fontFamily.replace(/"/g, '\\"')}", ui-monospace, 'SF Mono', Menlo, monospace`
+      : null,
+  );
+  setOrClear(
+    style,
+    "--cmux-editor-font-size",
+    terminal?.fontSize && terminal.fontSize > 0 ? `${terminal.fontSize}px` : null,
+  );
   style.setProperty("color-scheme", theme.isDark ? "dark" : "light");
 }
 
-function themedExtensions(isDark: boolean) {
-  return [editorChrome, syntaxHighlighting(isDark ? oneDarkHighlightStyle : defaultHighlightStyle, { fallback: true })];
+function setOrClear(style: CSSStyleDeclaration, name: string, value: string | null): void {
+  if (value) {
+    style.setProperty(name, value);
+  } else {
+    style.removeProperty(name);
+  }
+}
+
+function themedExtensions(theme: EditorTheme) {
+  const highlight = hasUsableTerminalPalette(theme.terminal)
+    ? terminalHighlightStyle(theme.terminal)
+    : theme.isDark
+      ? oneDarkHighlightStyle
+      : defaultHighlightStyle;
+  return [editorChrome, syntaxHighlighting(highlight, { fallback: true })];
 }
 
 // CodeMirror's built-in UI phrases (search panel, go-to-line, fold
@@ -347,7 +515,7 @@ async function start(rootElement: HTMLElement): Promise<void> {
           indentWithTab,
         ]),
         languageCompartment.of([]),
-        themeCompartment.of(themedExtensions(ready.theme.isDark)),
+        themeCompartment.of(themedExtensions(ready.theme)),
         wrapCompartment.of(wrapExtensions(ready.wordWrap)),
         localePhrases(ready.locale ?? "en"),
         EditorView.updateListener.of((update) => {
@@ -391,7 +559,7 @@ async function start(rootElement: HTMLElement): Promise<void> {
       }
       case "app.theme": {
         applyThemeVariables(event.theme);
-        view.dispatch({ effects: themeCompartment.reconfigure(themedExtensions(event.theme.isDark)) });
+        view.dispatch({ effects: themeCompartment.reconfigure(themedExtensions(event.theme)) });
         break;
       }
       case "app.options": {
@@ -404,9 +572,15 @@ async function start(rootElement: HTMLElement): Promise<void> {
   const fileName = ready.path.split("/").pop() ?? ready.path;
   const description = LanguageDescription.matchFilename(languages, fileName);
   if (description) {
-    void description.load().then((support) => {
-      view.dispatch({ effects: languageCompartment.reconfigure(support) });
-    });
+    description
+      .load()
+      .then((support) => {
+        view.dispatch({ effects: languageCompartment.reconfigure(support) });
+      })
+      .catch((error: unknown) => {
+        // Degrade to plain text; the buffer stays fully editable.
+        console.warn("cmux editor: language load failed", error);
+      });
   }
 
   window.addEventListener("focus", () => {
@@ -418,5 +592,7 @@ async function start(rootElement: HTMLElement): Promise<void> {
 }
 
 export function mountEditorSurface(rootElement: HTMLElement): void {
-  void start(rootElement);
+  start(rootElement).catch((error: unknown) => {
+    console.error("cmux editor: surface bootstrap failed", error);
+  });
 }

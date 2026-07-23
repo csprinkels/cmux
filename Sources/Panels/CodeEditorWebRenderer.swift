@@ -1,4 +1,5 @@
 import AppKit
+import CmuxFoundation
 import SwiftUI
 import WebKit
 
@@ -160,6 +161,11 @@ final class CodeEditorWebCoordinator: NSObject, WKNavigationDelegate, WKUIDelega
     private(set) var webView: CodeEditorWebView?
     private weak var panel: FilePreviewPanel?
     private var theme: AgentSessionWebTheme?
+    /// Ghostty terminal theme (colors/palette/font) mirrored into the webview
+    /// so the editor matches the terminal and diff viewer; refreshed on config
+    /// reloads via the same notifications `AgentChatThemeSync` observes.
+    private var terminalTheme: AgentChatThemePayload?
+    private var terminalThemeObservers: [NSObjectProtocol] = []
     private var wordWrap = false
     private var isPanelFocused = false
     private var hasLoadedShell = false
@@ -178,7 +184,7 @@ final class CodeEditorWebCoordinator: NSObject, WKNavigationDelegate, WKUIDelega
         if self.theme != theme {
             self.theme = theme
             if isReady {
-                sendEvent(["type": "app.theme", "theme": theme.dictionary])
+                sendEvent(["type": "app.theme", "theme": themeDictionary()])
             }
         }
         if self.wordWrap != wordWrap {
@@ -222,7 +228,50 @@ final class CodeEditorWebCoordinator: NSObject, WKNavigationDelegate, WKUIDelega
         }
         self.webView = webView
         panel?.attachPreviewFocus(root: webView, primaryResponder: webView, intent: .textEditor)
+        installTerminalThemeObserversIfNeeded()
         return webView
+    }
+
+    // MARK: - Terminal theme
+
+    private static func loadTerminalTheme() -> AgentChatThemePayload {
+        AgentChatThemePayload(
+            config: GhosttyConfig.load(globalFontMagnificationPercent: GlobalFontMagnification.storedPercent)
+        )
+    }
+
+    private func installTerminalThemeObserversIfNeeded() {
+        guard terminalThemeObservers.isEmpty else { return }
+        terminalTheme = Self.loadTerminalTheme()
+        let center = NotificationCenter.default
+        terminalThemeObservers = [.ghosttyConfigDidReload, .ghosttyDefaultBackgroundDidChange].map { name in
+            center.addObserver(forName: name, object: nil, queue: nil) { [weak self] _ in
+                Task { @MainActor in
+                    self?.refreshTerminalTheme()
+                }
+            }
+        }
+    }
+
+    private func refreshTerminalTheme() {
+        // Only refresh while a webview exists; observers are removed in close().
+        guard webView != nil else { return }
+        let next = Self.loadTerminalTheme()
+        guard next != terminalTheme else { return }
+        terminalTheme = next
+        if isReady {
+            sendEvent(["type": "app.theme", "theme": themeDictionary()])
+        }
+    }
+
+    /// Web chrome theme plus the nested Ghostty `terminal` block consumed by
+    /// `applyThemeVariables`/`themedExtensions` in `editorSurface.ts`.
+    private func themeDictionary() -> [String: Any] {
+        var dictionary = theme?.dictionary ?? [:]
+        if let terminalTheme {
+            dictionary["terminal"] = terminalTheme.editorTerminalDictionary
+        }
+        return dictionary
     }
 
     func loadShellIfNeeded() {
@@ -268,6 +317,8 @@ final class CodeEditorWebCoordinator: NSObject, WKNavigationDelegate, WKUIDelega
             webView.uiDelegate = nil
             webView.onPointerDown = nil
         }
+        terminalThemeObservers.forEach(NotificationCenter.default.removeObserver)
+        terminalThemeObservers = []
         webView = nil
         panel = nil
         hasLoadedShell = false
@@ -312,7 +363,7 @@ final class CodeEditorWebCoordinator: NSObject, WKNavigationDelegate, WKUIDelega
                 "path": panel.filePath,
                 "wordWrap": wordWrap,
                 "locale": Bundle.main.preferredLocalizations.first ?? "en",
-                "theme": theme?.dictionary ?? [:],
+                "theme": themeDictionary(),
                 "copy": [
                     "fileChangedOnDisk": String(
                         localized: "codeEditor.fileChangedOnDisk",
@@ -351,7 +402,16 @@ final class CodeEditorWebCoordinator: NSObject, WKNavigationDelegate, WKUIDelega
     /// Native save entry point (header button / save shortcut): pulls the live
     /// buffer from JS, writes it, then tells JS its baseline moved.
     private func saveFromHost() -> Task<Void, Never>? {
-        guard isReady, webView != nil else { return nil }
+        guard let panel else { return nil }
+        guard isReady, webView != nil else {
+            // Bridge not ready yet: the panel snapshot is still the live
+            // buffer (e.g. a dirty plain-engine buffer right after switching
+            // to the code engine). Save it instead of dropping the request.
+            let snapshot = panel.textContent
+            return Task { @MainActor [weak panel] in
+                _ = await panel?.saveResolvedTextContent(snapshot)
+            }
+        }
         return Task { @MainActor [weak self] in
             guard let self, let content = await self.pullContent() else { return }
             guard let panel = self.panel else { return }
@@ -436,6 +496,31 @@ final class CodeEditorWebCoordinator: NSObject, WKNavigationDelegate, WKUIDelega
         windowFeatures: WKWindowFeatures
     ) -> WKWebView? {
         nil
+    }
+}
+
+private extension AgentChatThemePayload {
+    /// The subset of the terminal theme the editor webview consumes; shape
+    /// matches `EditorTerminalTheme` in `webviews/src/surfaces/editor/bridge.ts`.
+    var editorTerminalDictionary: [String: Any] {
+        var dictionary: [String: Any] = [
+            "background": background,
+            "foreground": foreground,
+            "palette": palette
+        ]
+        if let selectionBackground {
+            dictionary["selectionBackground"] = selectionBackground
+        }
+        if let cursorColor {
+            dictionary["cursorColor"] = cursorColor
+        }
+        if let fontFamily {
+            dictionary["fontFamily"] = fontFamily
+        }
+        if let fontSize {
+            dictionary["fontSize"] = fontSize
+        }
+        return dictionary
     }
 }
 
