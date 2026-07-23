@@ -145,6 +145,21 @@ public actor GitCommandRunner {
         try await run(["pull", "--ff-only"], in: repository)
     }
 
+    // MARK: - Status
+
+    /// Reads the repository's change list with staged/unstaged sides intact
+    /// (`git status --porcelain=v1 -z --untracked-files=all`).
+    ///
+    /// - Parameter repository: The repository's working-tree root.
+    /// - Returns: Entries in git's output order.
+    public func status(in repository: URL) async throws -> [GitStatusEntry] {
+        let output = try await run(
+            ["status", "--porcelain=v1", "-z", "--untracked-files=all"],
+            in: repository
+        )
+        return GitPorcelainStatusParser().parse(output.standardOutput)
+    }
+
     // MARK: - Branches
 
     /// Lists local branches with the current one marked.
