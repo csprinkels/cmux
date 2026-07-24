@@ -1176,6 +1176,8 @@ struct ContentView: View {
     )
     private static let commandPaletteUsageDefaultsKey = "commandPalette.commandUsage.v1"
     nonisolated private static let commandPaletteCommandsPrefix = ">"
+    nonisolated private static let commandPaletteFilesPrefix = "/"
+    nonisolated private static let commandPaletteQuickOpenResultLimit = 64
     private static let commandPaletteVisiblePreviewResultLimit = 48
     private static let commandPaletteVisiblePreviewCandidateLimit = 128
     private static let maximumSidebarWidthRatio: CGFloat = 1.0 / 3.0
@@ -3054,6 +3056,17 @@ struct ContentView: View {
             openCommandPaletteSwitcher()
         })
 
+        view = AnyView(view.onReceive(NotificationCenter.default.publisher(for: .commandPaletteFilesRequested)) { notification in
+            let requestedWindow = notification.object as? NSWindow
+            guard Self.shouldHandleCommandPaletteRequest(
+                observedWindow: observedWindow,
+                requestedWindow: requestedWindow,
+                keyWindow: NSApp.keyWindow,
+                mainWindow: NSApp.mainWindow
+            ) else { return }
+            openCommandPaletteFiles()
+        })
+
         view = AnyView(view.onReceive(NotificationCenter.default.publisher(for: .defaultTerminalRegistrationDidChange)) { _ in
             refreshCachedDefaultTerminalStatus()
         })
@@ -4813,6 +4826,9 @@ struct ContentView: View {
         if query.hasPrefix(Self.commandPaletteCommandsPrefix) {
             return .commands
         }
+        if query.hasPrefix(Self.commandPaletteFilesPrefix) {
+            return .files
+        }
         return .switcher
     }
 
@@ -4839,6 +4855,8 @@ struct ContentView: View {
         switch commandPaletteListScope {
         case .commands:
             return String(localized: "commandPalette.search.commandsPlaceholder", defaultValue: "Type a command")
+        case .files:
+            return String(localized: "commandPalette.search.filesPlaceholder", defaultValue: "Search files")
         case .switcher:
             return commandPaletteSearchAllSurfaces
                 ? String(localized: "commandPalette.search.switcherPlaceholderAllSurfaces", defaultValue: "Search workspaces and surfaces")
@@ -4850,6 +4868,8 @@ struct ContentView: View {
         switch commandPaletteListScope {
         case .commands:
             return String(localized: "commandPalette.search.commandsEmpty", defaultValue: "No commands match your search.")
+        case .files:
+            return String(localized: "commandPalette.search.filesEmpty", defaultValue: "No files match your search.")
         case .switcher:
             return commandPaletteSearchAllSurfaces
                 ? String(localized: "commandPalette.search.switcherEmptyAllSurfaces", defaultValue: "No workspaces or surfaces match your search.")
@@ -4899,6 +4919,9 @@ struct ContentView: View {
         case .commands:
             let suffix = String(query.dropFirst(Self.commandPaletteCommandsPrefix.count))
             return suffix.trimmingCharacters(in: .whitespacesAndNewlines)
+        case .files:
+            let suffix = String(query.dropFirst(Self.commandPaletteFilesPrefix.count))
+            return suffix.trimmingCharacters(in: .whitespacesAndNewlines)
         case .switcher:
             return query.trimmingCharacters(in: .whitespacesAndNewlines)
         }
@@ -4919,6 +4942,10 @@ struct ContentView: View {
         switch scope {
         case .commands:
             return commandPaletteCommands(commandsContext: commandsContext ?? commandPaletteCachedCommandsContext())
+        case .files:
+            // Quick-open rows come from the async file index in
+            // scheduleCommandPaletteResultsRefresh, never from the corpus.
+            return []
         case .switcher:
             return commandPaletteSwitcherEntries(includeSurfaces: includeSurfaces)
         }
@@ -5059,6 +5086,108 @@ struct ContentView: View {
         }
     }
 
+    /// Quick-open bypasses the command corpus entirely: the mention file
+    /// index already walks and ranks workspace files, so this branch queries
+    /// it asynchronously and publishes the hits as palette rows.
+    private func scheduleCommandPaletteQuickOpenRefresh(
+        matchingQuery: String,
+        preservePendingActivation: Bool
+    ) {
+        commandPaletteSearchRequestID &+= 1
+        let requestID = commandPaletteSearchRequestID
+        if preservePendingActivation {
+            commandPalettePendingActivation = Self.commandPalettePendingActivation(
+                commandPalettePendingActivation,
+                rebasedTo: requestID
+            )
+        } else {
+            commandPalettePendingActivation = nil
+        }
+        cancelCommandPaletteSearch()
+        isCommandPaletteSearchPending = true
+        syncCommandPaletteOverlayCommandListState()
+
+        let rootDirectory = commandPaletteQuickOpenRootDirectory()
+        commandPaletteSearchTask = Task { @MainActor in
+            let candidates = await TextBoxMentionIndexStore.shared.quickOpenFileCandidates(
+                matching: matchingQuery,
+                rootDirectory: rootDirectory,
+                limit: Self.commandPaletteQuickOpenResultLimit
+            )
+            guard !Task.isCancelled,
+                  requestID == commandPaletteSearchRequestID,
+                  Self.commandPaletteListScope(for: commandPaletteQuery) == .files else {
+                return
+            }
+            let results = Self.commandPaletteQuickOpenResults(
+                candidates: candidates,
+                matchingQuery: matchingQuery,
+                openFile: { path in openFilePreviewFromSidebar(filePath: path) }
+            )
+            cachedCommandPaletteResults = results
+            let pendingActivationResolution = Self.commandPalettePendingActivationResolution(
+                commandPalettePendingActivation,
+                requestID: requestID,
+                resultIDs: results.map(\.id)
+            )
+            commandPaletteResolvedSearchRequestID = requestID
+            commandPaletteResolvedSearchScope = .files
+            commandPaletteResolvedSearchFingerprint = nil
+            commandPaletteResolvedMatchingQuery = matchingQuery
+            isCommandPaletteSearchPending = false
+            setCommandPaletteVisibleResults(results, scope: .files, fingerprint: nil)
+            if pendingActivationResolution.shouldClearPendingActivation {
+                commandPalettePendingActivation = nil
+            }
+            commandPaletteResultsRevision &+= 1
+            if let resolvedActivation = pendingActivationResolution.resolvedActivation {
+                runCommandPaletteResolvedActivation(resolvedActivation)
+            }
+        }
+    }
+
+    private func commandPaletteQuickOpenRootDirectory() -> String? {
+        guard let selectedId = tabManager.selectedTabId,
+              let tab = tabManager.tabs.first(where: { $0.id == selectedId }),
+              !tab.usesRemoteDirectoryProvenance else {
+            return nil
+        }
+        let dir = tab.currentDirectory.trimmingCharacters(in: .whitespacesAndNewlines)
+        return dir.isEmpty ? nil : dir
+    }
+
+    nonisolated private static func commandPaletteQuickOpenResults(
+        candidates: [TextBoxMentionCandidate],
+        matchingQuery: String,
+        openFile: @escaping (String) -> Void
+    ) -> [CommandPaletteSearchResult] {
+        let matcher = CommandPaletteFuzzyMatcher(query: matchingQuery)
+        return candidates.enumerated().map { index, candidate in
+            // Mention candidates title as "@relative/path"; quick-open shows
+            // the bare relative path.
+            let title = candidate.title.hasPrefix("@")
+                ? String(candidate.title.dropFirst())
+                : candidate.title
+            let targetPath = candidate.targetPath
+            let command = CommandPaletteCommand(
+                id: "quickOpen.file:\(targetPath)",
+                rank: index,
+                title: title,
+                subtitle: candidate.subtitle,
+                shortcutHint: nil,
+                kindLabel: nil,
+                keywords: [],
+                dismissOnRun: true,
+                action: { openFile(targetPath) }
+            )
+            return CommandPaletteSearchResult(
+                command: command,
+                score: 0,
+                titleMatchIndices: matchingQuery.isEmpty ? [] : matcher.matchCharacterIndices(in: title)
+            )
+        }
+    }
+
     private func setCommandPaletteVisibleResults(
         _ results: [CommandPaletteSearchResult],
         scope: CommandPaletteListScope,
@@ -5130,6 +5259,14 @@ struct ContentView: View {
             query: effectiveQuery,
             scope: scope
         )
+
+        if scope == .files {
+            scheduleCommandPaletteQuickOpenRefresh(
+                matchingQuery: matchingQuery,
+                preservePendingActivation: preservePendingActivation
+            )
+            return
+        }
 
         refreshCommandPaletteSearchCorpus(
             force: forceSearchCorpusRefresh,
@@ -5352,6 +5489,10 @@ struct ContentView: View {
             return commandPaletteCommandsFingerprint(
                 commandsContext: commandsContext ?? commandPaletteCachedCommandsContext()
             )
+        case .files:
+            // Quick-open rows come from the async file index; there is no
+            // corpus to fingerprint.
+            return 0
         case .switcher:
             return commandPaletteSwitcherEntriesFingerprint(includeSurfaces: includeSurfaces)
         }
@@ -9277,8 +9418,22 @@ struct ContentView: View {
         handleCommandPaletteListRequest(scope: .switcher)
     }
 
+    private func openCommandPaletteFiles() {
+        // Warm the file index so first results land with the overlay.
+        let rootDirectory = commandPaletteQuickOpenRootDirectory()
+        Task {
+            await TextBoxMentionIndexStore.shared.warmIndexes(rootDirectory: rootDirectory)
+        }
+        handleCommandPaletteListRequest(scope: .files)
+    }
+
     private func handleCommandPaletteListRequest(scope: CommandPaletteListScope) {
-        let initialQuery = (scope == .commands) ? Self.commandPaletteCommandsPrefix : ""
+        let initialQuery: String
+        switch scope {
+        case .commands: initialQuery = Self.commandPaletteCommandsPrefix
+        case .files: initialQuery = Self.commandPaletteFilesPrefix
+        case .switcher: initialQuery = ""
+        }
         guard isCommandPalettePresented else {
             presentCommandPalette(initialQuery: initialQuery)
             return

@@ -73,36 +73,58 @@ actor TextBoxMentionIndexStore {
         }
     }
 
+    /// Ranked workspace files for the quick-open palette. Reuses the same
+    /// cached rg-backed index as @-mention completion; directories are
+    /// filtered out because quick-open opens files.
+    func quickOpenFileCandidates(
+        matching query: String,
+        rootDirectory: String?,
+        limit: Int
+    ) async -> [TextBoxMentionCandidate] {
+        guard limit > 0,
+              let rootDirectory = Self.normalizedDirectory(rootDirectory) else {
+            return []
+        }
+        let candidates = await fileCandidates(matching: query, rootDirectory: rootDirectory)
+        return Array(candidates.lazy.filter { !$0.isDirectory }.prefix(limit))
+    }
+
     private func fileSuggestions(
         for query: TextBoxMentionQuery,
         rootDirectory: String
     ) async -> [TextBoxMentionSuggestion] {
+        await fileCandidates(matching: query.query, rootDirectory: rootDirectory)
+            .map { $0.suggestion(trigger: query.trigger) }
+    }
+
+    private func fileCandidates(
+        matching rawQuery: String,
+        rootDirectory: String
+    ) async -> [TextBoxMentionCandidate] {
         let now = Date()
-        let trimmedQuery = query.query.trimmingCharacters(in: .whitespacesAndNewlines)
+        let trimmedQuery = rawQuery.trimmingCharacters(in: .whitespacesAndNewlines)
         if trimmedQuery.isEmpty {
             if let cachedIndex = cachedFileIndex(rootDirectory: rootDirectory, now: now) {
                 return cachedIndex.rankedCandidates(
-                    matching: query.query,
+                    matching: rawQuery,
                     limit: Self.suggestionLimit,
                     shouldCancel: { Task.isCancelled }
                 )
-                .map { $0.suggestion(trigger: query.trigger) }
             }
 
             refreshFileIndexInBackground(rootDirectory: rootDirectory, now: now)
-            return await Self.scanRootFileSystemCandidates(rootURL: URL(
+            return await Array(Self.scanRootFileSystemCandidates(rootURL: URL(
                 fileURLWithPath: rootDirectory,
                 isDirectory: true
             ))
-            .prefix(Self.suggestionLimit)
-            .map { $0.suggestion(trigger: query.trigger) }
+            .prefix(Self.suggestionLimit))
         }
 
         let index = await fileIndex(rootDirectory: rootDirectory, now: now)
         if Task.isCancelled { return [] }
 
         var matches = index.rankedCandidates(
-            matching: query.query,
+            matching: rawQuery,
             limit: Self.suggestionLimit,
             shouldCancel: { Task.isCancelled }
         )
@@ -115,14 +137,13 @@ actor TextBoxMentionIndexStore {
             )
             if Task.isCancelled { return [] }
             matches = refreshed.rankedCandidates(
-                matching: query.query,
+                matching: rawQuery,
                 limit: Self.suggestionLimit,
                 shouldCancel: { Task.isCancelled }
             )
             if Task.isCancelled { return [] }
         }
         return matches
-            .map { $0.suggestion(trigger: query.trigger) }
     }
 
     private func cachedFileIndex(
@@ -636,7 +657,8 @@ actor TextBoxMentionIndexStore {
             targetPath: directoryURL.path,
             systemImageName: "folder",
             searchKey: "\(normalizedPath) \(directoryName) folder directory".lowercased(),
-            priority: directoryPriority(relativePath: normalizedPath)
+            priority: directoryPriority(relativePath: normalizedPath),
+            isDirectory: true
         )
     }
 

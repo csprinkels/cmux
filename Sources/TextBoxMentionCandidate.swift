@@ -5,6 +5,25 @@ struct TextBoxMentionCandidate: Sendable {
     let systemImageName: String
     let searchKey: String
     let priority: Int
+    let isDirectory: Bool
+
+    init(
+        title: String,
+        subtitle: String,
+        targetPath: String,
+        systemImageName: String,
+        searchKey: String,
+        priority: Int,
+        isDirectory: Bool = false
+    ) {
+        self.title = title
+        self.subtitle = subtitle
+        self.targetPath = targetPath
+        self.systemImageName = systemImageName
+        self.searchKey = searchKey
+        self.priority = priority
+        self.isDirectory = isDirectory
+    }
 
     func suggestion(trigger: Character) -> TextBoxMentionSuggestion {
         let displayTitle: String

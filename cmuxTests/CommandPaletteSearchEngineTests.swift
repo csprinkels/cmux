@@ -2033,6 +2033,18 @@ final class CommandPaletteSearchEngineTests: XCTestCase {
         )
     }
 
+    func testRefreshInputsRouteSlashPrefixToFilesScope() {
+        let inputs = ContentView.commandPaletteRefreshInputsForTests(
+            stateQuery: "",
+            observedQuery: "/staging",
+            searchAllSurfaces: true
+        )
+
+        XCTAssertEqual(inputs.scope, "files")
+        XCTAssertEqual(inputs.matchingQuery, "staging")
+        XCTAssertFalse(inputs.includesSurfaces)
+    }
+
     func testRefreshInputsPreferObservedQueryOverStaleState() {
         let inputs = ContentView.commandPaletteRefreshInputsForTests(
             stateQuery: ">",

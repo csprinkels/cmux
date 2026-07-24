@@ -471,6 +471,53 @@ struct TextBoxMentionCompletionTests {
     }
 
     @Test
+    func testQuickOpenFileCandidatesReturnFilesOnly() async throws {
+        let fileManager = FileManager.default
+        let root = fileManager.temporaryDirectory.appendingPathComponent(
+            "cmux-quick-open-\(UUID().uuidString)",
+            isDirectory: true
+        )
+        defer { try? fileManager.removeItem(at: root) }
+
+        let sourceDirectory = root.appendingPathComponent("Sources", isDirectory: true)
+        try fileManager.createDirectory(at: sourceDirectory, withIntermediateDirectories: true)
+        try "struct QuickOpen {}".write(
+            to: sourceDirectory.appendingPathComponent("QuickOpen.swift"),
+            atomically: true,
+            encoding: .utf8
+        )
+        try "notes".write(
+            to: root.appendingPathComponent("README.md"),
+            atomically: true,
+            encoding: .utf8
+        )
+
+        let matches = await TextBoxMentionIndexStore.shared.quickOpenFileCandidates(
+            matching: "QuickOpen",
+            rootDirectory: root.path,
+            limit: 10
+        )
+        #expect(matches.first?.targetPath.hasSuffix("Sources/QuickOpen.swift") == true)
+        #expect(!matches.isEmpty && matches.allSatisfy { !$0.isDirectory })
+
+        // Empty query serves the root scan, which sees the Sources directory;
+        // quick-open must still return files only.
+        let emptyQueryMatches = await TextBoxMentionIndexStore.shared.quickOpenFileCandidates(
+            matching: "",
+            rootDirectory: root.path,
+            limit: 10
+        )
+        #expect(!emptyQueryMatches.isEmpty && emptyQueryMatches.allSatisfy { !$0.isDirectory })
+
+        let missingRootMatches = await TextBoxMentionIndexStore.shared.quickOpenFileCandidates(
+            matching: "QuickOpen",
+            rootDirectory: nil,
+            limit: 10
+        )
+        #expect(missingRootMatches.isEmpty)
+    }
+
+    @Test
     func testTextBoxMentionMarkdownEscapesAngleTargetDelimiters() {
         let link = TextBoxMentionMarkdown.link(
             label: "@Docs/[draft].md",
