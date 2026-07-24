@@ -42,6 +42,8 @@ public struct SettingCatalog: SettingCatalogSection {
     public let fileEditor = FileEditorCatalogSection()
     /// Settings for the file explorer tree (the `fileExplorer.*` keys).
     public let fileExplorer = FileExplorerCatalogSection()
+    /// Settings for editor AI features (the `ai.*` keys).
+    public let ai = AICatalogSection()
     /// Settings for Mobile pairing and sync.
     public let mobile = MobileCatalogSection()
     public let betaFeatures = BetaFeaturesCatalogSection()

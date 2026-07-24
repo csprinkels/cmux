@@ -1772,6 +1772,23 @@
           "doubleClickAction": "What double-clicking (or pressing Return on a search result for) a file in the file explorer does. `preview` opens the built-in cmux file preview (the default and historical behavior). `defaultEditor` opens with the macOS default app for the file type. `preferredEditor` opens with the `app.preferredEditor` command, falling back to the default app when none is set. Only applies to files; directories always expand/collapse, and non-local (remote) file explorers always open the cmux preview.",
           "placement": "Where the file tree is mounted. `right` (the default) is the right sidebar's Files tab. `left` mounts the tree in the left sidebar below the workspace list and hides the right sidebar's Files tab. `both` shows both, sharing one selection."
         },
+        "ai": {
+          "description": "Editor AI (bring-your-own-key) settings. API keys are never read from this file; they live in the macOS Keychain via Settings.",
+          "autocomplete": {
+            "enabled": "Whether inline ghost-text autocomplete is active in the code editor. Disabled sends zero AI requests.",
+            "provider": "Which provider the autocomplete feature uses.",
+            "model": "The model the autocomplete feature requests. Empty keeps the feature inactive."
+          },
+          "edit": {
+            "provider": "Which provider the edit-selection feature uses.",
+            "model": "The model the edit-selection feature requests. Empty keeps the feature inactive."
+          },
+          "providers": {
+            "anthropicBaseURL": "Endpoint origin for the `anthropic` provider.",
+            "openaiBaseURL": "Endpoint origin for the `openai` provider. Point this at any OpenAI-compatible server to use a custom endpoint.",
+            "ollamaBaseURL": "Endpoint origin for the `ollama` provider (keyless, local by default)."
+          }
+        },
         "diffViewer": {
           "defaultLayout": "Default layout for newly opened diff viewers. The toolbar layout toggle persists the user's last choice; an explicit `cmux diff --layout` option overrides both."
         },

@@ -462,6 +462,9 @@ public struct SettingsWindowRoot: View {
         )
         .id(anchorID(for: .customSidebars))
 
+        AISection(defaultsStore: defaultsStore, catalog: catalog)
+            .id(anchorID(for: .ai))
+
         BetaFeaturesSection(defaultsStore: defaultsStore, catalog: catalog)
             .id(anchorID(for: .betaFeatures))
         AutomationSection(

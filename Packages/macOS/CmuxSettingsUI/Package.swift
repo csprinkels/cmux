@@ -17,6 +17,7 @@ let package = Package(
         .package(path: "../../Shared/CMUXMobileCore"),
         .package(path: "../CmuxFoundation"),
         .package(path: "../CmuxSettings"),
+        .package(path: "../CmuxAIProviders"),
     ],
     targets: [
         .target(
@@ -25,6 +26,7 @@ let package = Package(
                 "CMUXMobileCore",
                 .product(name: "CmuxFoundation", package: "CmuxFoundation"),
                 .product(name: "CmuxSettings", package: "CmuxSettings"),
+                .product(name: "CmuxAIProviders", package: "CmuxAIProviders"),
             ]
         ),
         .testTarget(

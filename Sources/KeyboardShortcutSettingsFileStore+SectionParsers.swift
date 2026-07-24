@@ -21,6 +21,59 @@ extension CmuxSettingsFileStore {
         }
     }
 
+    func parseAISection(
+        _ section: [String: Any],
+        sourcePath: String,
+        snapshot: inout ResolvedSettingsSnapshot
+    ) {
+        // API keys are Keychain-only by design: any "apiKey" in cmux.json is
+        // rejected so secrets never ride the config file.
+        if let autocomplete = section["autocomplete"] as? [String: Any] {
+            if let value = jsonBool(autocomplete["enabled"]) {
+                snapshot.managedUserDefaults["ai.autocomplete.enabled"] = .bool(value)
+            } else if autocomplete.keys.contains("enabled") {
+                logInvalid("ai.autocomplete.enabled", sourcePath: sourcePath)
+            }
+            parseAIFeatureSelection(autocomplete, prefix: "ai.autocomplete", sourcePath: sourcePath, snapshot: &snapshot)
+        }
+        if let edit = section["edit"] as? [String: Any] {
+            parseAIFeatureSelection(edit, prefix: "ai.edit", sourcePath: sourcePath, snapshot: &snapshot)
+        }
+        if let providers = section["providers"] as? [String: Any] {
+            for provider in ["anthropic", "openai", "ollama"] {
+                guard let entry = providers[provider] as? [String: Any] else { continue }
+                if entry.keys.contains("apiKey") {
+                    logInvalid("ai.providers.\(provider).apiKey", sourcePath: sourcePath)
+                }
+                if let baseURL = jsonString(entry["baseURL"]),
+                   let url = URL(string: baseURL), url.scheme == "http" || url.scheme == "https" {
+                    snapshot.managedUserDefaults["ai.providers.\(provider).baseURL"] = .string(baseURL)
+                } else if entry.keys.contains("baseURL") {
+                    logInvalid("ai.providers.\(provider).baseURL", sourcePath: sourcePath)
+                }
+            }
+        }
+    }
+
+    private func parseAIFeatureSelection(
+        _ section: [String: Any],
+        prefix: String,
+        sourcePath: String,
+        snapshot: inout ResolvedSettingsSnapshot
+    ) {
+        if let provider = jsonString(section["provider"]),
+           AIEditorSettings.validProviders.contains(provider) {
+            snapshot.managedUserDefaults["\(prefix).provider"] = .string(provider)
+        } else if section.keys.contains("provider") {
+            logInvalid("\(prefix).provider", sourcePath: sourcePath)
+        }
+        if let model = jsonString(section["model"]) {
+            snapshot.managedUserDefaults["\(prefix).model"] = .string(model)
+        } else if section.keys.contains("model") {
+            logInvalid("\(prefix).model", sourcePath: sourcePath)
+        }
+    }
+
     func parseFileExplorerSection(
         _ section: [String: Any],
         sourcePath: String,

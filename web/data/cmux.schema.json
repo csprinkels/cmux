@@ -1558,6 +1558,101 @@
         }
       }
     },
+    "ai": {
+      "title": "ai",
+      "description": "Editor AI (bring-your-own-key) settings. API keys are never read from this file; they live in the macOS Keychain via Settings.",
+      "descriptionKey": "schemaDescriptions.ai.description",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "autocomplete": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "enabled": {
+              "type": "boolean",
+              "default": false,
+              "description": "Whether inline ghost-text autocomplete is active in the code editor. Disabled sends zero AI requests.",
+              "descriptionKey": "schemaDescriptions.ai.autocomplete.enabled"
+            },
+            "provider": {
+              "type": "string",
+              "enum": ["anthropic", "openai", "ollama"],
+              "default": "ollama",
+              "description": "Which provider the autocomplete feature uses.",
+              "descriptionKey": "schemaDescriptions.ai.autocomplete.provider"
+            },
+            "model": {
+              "type": "string",
+              "default": "",
+              "description": "The model the autocomplete feature requests. Empty keeps the feature inactive.",
+              "descriptionKey": "schemaDescriptions.ai.autocomplete.model"
+            }
+          }
+        },
+        "edit": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "provider": {
+              "type": "string",
+              "enum": ["anthropic", "openai", "ollama"],
+              "default": "ollama",
+              "description": "Which provider the edit-selection feature uses.",
+              "descriptionKey": "schemaDescriptions.ai.edit.provider"
+            },
+            "model": {
+              "type": "string",
+              "default": "",
+              "description": "The model the edit-selection feature requests. Empty keeps the feature inactive.",
+              "descriptionKey": "schemaDescriptions.ai.edit.model"
+            }
+          }
+        },
+        "providers": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "anthropic": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "baseURL": {
+                  "type": "string",
+                  "default": "https://api.anthropic.com",
+                  "description": "Endpoint origin for the `anthropic` provider.",
+                  "descriptionKey": "schemaDescriptions.ai.providers.anthropicBaseURL"
+                }
+              }
+            },
+            "openai": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "baseURL": {
+                  "type": "string",
+                  "default": "https://api.openai.com",
+                  "description": "Endpoint origin for the `openai` provider. Point this at any OpenAI-compatible server to use a custom endpoint.",
+                  "descriptionKey": "schemaDescriptions.ai.providers.openaiBaseURL"
+                }
+              }
+            },
+            "ollama": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "baseURL": {
+                  "type": "string",
+                  "default": "http://localhost:11434",
+                  "description": "Endpoint origin for the `ollama` provider (keyless, local by default).",
+                  "descriptionKey": "schemaDescriptions.ai.providers.ollamaBaseURL"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "diffViewer": {
       "title": "diffViewer",
       "description": "Built-in diff viewer settings.",

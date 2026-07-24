@@ -243,6 +243,24 @@ extension CmuxSettingsFileStore {
                 ],
             ],
             [
+                "ai": [
+                    "autocomplete": [
+                        "enabled": false,
+                        "provider": "ollama",
+                        "model": "",
+                    ],
+                    "edit": [
+                        "provider": "ollama",
+                        "model": "",
+                    ],
+                    "providers": [
+                        "anthropic": ["baseURL": "https://api.anthropic.com"],
+                        "openai": ["baseURL": "https://api.openai.com"],
+                        "ollama": ["baseURL": "http://localhost:11434"],
+                    ],
+                ],
+            ],
+            [
                 "shortcuts": [
                     "bindings": shortcutsBindings,
                 ],
