@@ -1,4 +1,5 @@
 import AppKit
+import CmuxAIProviders
 import CmuxFoundation
 import SwiftUI
 import WebKit
@@ -174,6 +175,8 @@ final class CodeEditorWebCoordinator: NSObject, WKNavigationDelegate, WKUIDelega
     /// echoes of our own saves instead of resetting the JS buffer.
     private var lastSyncedDiskContent: String?
     private var lastDiskSyncToken: Int?
+    /// In-flight edit-selection generation; single-flight per editor.
+    private var aiEditTask: Task<[String: Any], Never>?
 
     func bind(panel: FilePreviewPanel, theme: AgentSessionWebTheme, wordWrap: Bool, isFocused: Bool) {
         self.panel = panel
@@ -319,6 +322,8 @@ final class CodeEditorWebCoordinator: NSObject, WKNavigationDelegate, WKUIDelega
         }
         terminalThemeObservers.forEach(NotificationCenter.default.removeObserver)
         terminalThemeObservers = []
+        aiEditTask?.cancel()
+        aiEditTask = nil
         webView = nil
         panel = nil
         hasLoadedShell = false
@@ -380,6 +385,34 @@ final class CodeEditorWebCoordinator: NSObject, WKNavigationDelegate, WKUIDelega
                     "saveFailed": String(
                         localized: "codeEditor.saveFailed",
                         defaultValue: "Could not save the file."
+                    ),
+                    "aiEditPlaceholder": String(
+                        localized: "codeEditor.aiEdit.placeholder",
+                        defaultValue: "Describe how to change the selection…"
+                    ),
+                    "aiEditApply": String(
+                        localized: "codeEditor.aiEdit.apply",
+                        defaultValue: "Apply"
+                    ),
+                    "aiEditCancel": String(
+                        localized: "codeEditor.aiEdit.cancel",
+                        defaultValue: "Cancel"
+                    ),
+                    "aiEditWorking": String(
+                        localized: "codeEditor.aiEdit.working",
+                        defaultValue: "Asking the model…"
+                    ),
+                    "aiEditSelectFirst": String(
+                        localized: "codeEditor.aiEdit.selectFirst",
+                        defaultValue: "Select some code first, then press ⌘K."
+                    ),
+                    "aiEditAccept": String(
+                        localized: "codeEditor.aiEdit.accept",
+                        defaultValue: "Accept"
+                    ),
+                    "aiEditReject": String(
+                        localized: "codeEditor.aiEdit.reject",
+                        defaultValue: "Reject"
                     )
                 ]
             ] as [String: Any]
@@ -394,9 +427,109 @@ final class CodeEditorWebCoordinator: NSObject, WKNavigationDelegate, WKUIDelega
                 lastSyncedDiskContent = content
             }
             return ["saved": saved]
+        case "ai.editSelection":
+            guard let selection = params["selection"] as? String, !selection.isEmpty,
+                  let instruction = params["instruction"] as? String, !instruction.isEmpty else {
+                return nil
+            }
+            return await performAIEditSelection(
+                selection: selection,
+                instruction: instruction,
+                language: params["language"] as? String ?? "",
+                path: panel.filePath
+            )
         default:
             return nil
         }
+    }
+
+    // MARK: - AI edit selection
+
+    /// Runs one edit-selection generation. Single-flight: a newer request
+    /// cancels the one in flight, and the cancelled request replies
+    /// `{cancelled: true}` so the web side drops it silently.
+    private func performAIEditSelection(
+        selection: String,
+        instruction: String,
+        language: String,
+        path: String
+    ) async -> [String: Any] {
+        aiEditTask?.cancel()
+        let task = Task { () -> [String: Any] in
+            let featureSelection = AIEditorSettings.editSelection()
+            guard let configuration = AIEditorSettings.configuration(for: featureSelection) else {
+                return ["errorMessage": String(
+                    localized: "codeEditor.aiEdit.notConfigured",
+                    defaultValue: "Choose an Edit Selection provider and model in Settings → AI."
+                )]
+            }
+            let request = AIProviderRequest(
+                messages: [
+                    AIChatMessage(role: .system, text: Self.aiEditSystemPrompt),
+                    AIChatMessage(
+                        role: .user,
+                        text: Self.aiEditUserPrompt(
+                            instruction: instruction,
+                            language: language,
+                            path: path,
+                            selection: selection
+                        )
+                    ),
+                ],
+                maxTokens: 4096,
+                temperature: 0.2
+            )
+            do {
+                let stream = try await AIProviderClient().streamText(request, configuration: configuration)
+                var output = ""
+                for try await delta in stream {
+                    try Task.checkCancellation()
+                    output += delta
+                }
+                return ["content": Self.strippingCodeFences(from: output)]
+            } catch is CancellationError {
+                return ["cancelled": true]
+            } catch {
+                return ["errorMessage": error.localizedDescription]
+            }
+        }
+        aiEditTask = task
+        return await task.value
+    }
+
+    nonisolated private static let aiEditSystemPrompt = """
+    You rewrite code selections inside a code editor. Reply with only the \
+    replacement for the selected code — no explanations, no markdown fences, \
+    no surrounding prose. Preserve the selection's indentation style.
+    """
+
+    nonisolated private static func aiEditUserPrompt(
+        instruction: String,
+        language: String,
+        path: String,
+        selection: String
+    ) -> String {
+        var lines = ["File: \(path)"]
+        if !language.isEmpty {
+            lines.append("Language: \(language)")
+        }
+        lines.append("Instruction: \(instruction)")
+        lines.append("")
+        lines.append("Selected code:")
+        lines.append(selection)
+        return lines.joined(separator: "\n")
+    }
+
+    /// Drops a wrapping markdown fence pair if the model added one anyway.
+    nonisolated static func strippingCodeFences(from output: String) -> String {
+        var lines = output.split(separator: "\n", omittingEmptySubsequences: false)
+        while lines.first?.isEmpty == true { lines.removeFirst() }
+        while lines.last?.isEmpty == true { lines.removeLast() }
+        guard let first = lines.first, first.hasPrefix("```"),
+              let last = lines.last, last == "```", lines.count >= 2 else {
+            return output
+        }
+        return lines.dropFirst().dropLast().joined(separator: "\n")
     }
 
     /// Native save entry point (header button / save shortcut): pulls the live

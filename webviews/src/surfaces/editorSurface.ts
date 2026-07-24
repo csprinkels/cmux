@@ -40,6 +40,7 @@ import {
   type EditorReadyReply,
   type EditorTheme,
 } from "./editor/bridge";
+import { aiEditFeature } from "./editor/aiEdit";
 import { DocumentSession } from "./editor/documentSession";
 import { hasUsableTerminalPalette, terminalHighlightStyle } from "./editor/terminalHighlight";
 
@@ -191,6 +192,50 @@ const editorChrome = EditorView.theme({
     color: "var(--cmux-editor-muted, inherit)",
     borderRadius: "4px",
     padding: "0 4px",
+  },
+  ".cmux-ai-edit-panel": {
+    display: "flex",
+    alignItems: "center",
+    gap: "6px",
+    padding: "4px 8px",
+  },
+  ".cmux-ai-edit-panel .cm-textfield": {
+    flex: "1",
+    minWidth: "120px",
+  },
+  ".cmux-ai-edit-status": {
+    color: "var(--cmux-editor-muted, inherit)",
+    fontSize: "11px",
+    whiteSpace: "nowrap",
+    overflow: "hidden",
+    textOverflow: "ellipsis",
+  },
+  ".cm-deletedChunk": {
+    backgroundColor: "color-mix(in srgb, var(--cmux-editor-danger, #c0392b) 12%, transparent)",
+  },
+  ".cm-deletedChunk .cm-deletedText": {
+    textDecoration: "line-through",
+    textDecorationColor: "color-mix(in srgb, var(--cmux-editor-danger, #c0392b) 60%, transparent)",
+  },
+  ".cm-changedLine": {
+    backgroundColor: "color-mix(in srgb, var(--cmux-editor-accent, currentColor) 8%, transparent)",
+  },
+  ".cm-changedText": {
+    background: "color-mix(in srgb, var(--cmux-editor-accent, currentColor) 20%, transparent)",
+  },
+  ".cm-chunkButtons button": {
+    border: "none",
+    borderRadius: "5px",
+    padding: "1px 8px",
+    margin: "0 2px",
+    font: "500 10px -apple-system, system-ui, sans-serif",
+    background: "color-mix(in srgb, var(--cmux-editor-fg, currentColor) 10%, transparent)",
+    color: "var(--cmux-editor-fg, inherit)",
+    cursor: "default",
+  },
+  ".cm-chunkButtons button[name=accept]": {
+    background: "var(--cmux-editor-accent, #3478f6)",
+    color: "#fff",
   },
   ".cm-foldGutter span": {
     opacity: "0",
@@ -409,6 +454,7 @@ async function start(rootElement: HTMLElement): Promise<void> {
   installWebviewStyles("editor", surfaceStyles);
 
   const session = new DocumentSession(ready.diskContent);
+  let currentLanguageName = "";
   const languageCompartment = new Compartment();
   const themeCompartment = new Compartment();
   const wrapCompartment = new Compartment();
@@ -517,6 +563,18 @@ async function start(rootElement: HTMLElement): Promise<void> {
         languageCompartment.of([]),
         themeCompartment.of(themedExtensions(ready.theme)),
         wrapCompartment.of(wrapExtensions(ready.wordWrap)),
+        aiEditFeature({
+          copy: {
+            instructionPlaceholder: ready.copy.aiEditPlaceholder,
+            apply: ready.copy.aiEditApply,
+            cancel: ready.copy.aiEditCancel,
+            working: ready.copy.aiEditWorking,
+            selectFirst: ready.copy.aiEditSelectFirst,
+            accept: ready.copy.aiEditAccept,
+            reject: ready.copy.aiEditReject,
+          },
+          language: () => currentLanguageName,
+        }),
         localePhrases(ready.locale ?? "en"),
         EditorView.updateListener.of((update) => {
           if (update.docChanged) {
@@ -571,6 +629,9 @@ async function start(rootElement: HTMLElement): Promise<void> {
 
   const fileName = ready.path.split("/").pop() ?? ready.path;
   const description = LanguageDescription.matchFilename(languages, fileName);
+  if (description) {
+    currentLanguageName = description.name;
+  }
   if (description) {
     description
       .load()

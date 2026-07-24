@@ -219,6 +219,21 @@ struct CodeEditorFilePreviewPanelTests {
         panel.attachTextView(NSTextView())
         #expect(panel.webEditorSaveHandler == nil)
     }
+
+    @Test("AI edit output keeps raw text but sheds a wrapping markdown fence")
+    func aiEditFenceStripping() {
+        #expect(CodeEditorWebCoordinator.strippingCodeFences(from: "let x = 1\n") == "let x = 1\n")
+        #expect(
+            CodeEditorWebCoordinator.strippingCodeFences(from: "```swift\nlet x = 1\nlet y = 2\n```")
+                == "let x = 1\nlet y = 2"
+        )
+        #expect(
+            CodeEditorWebCoordinator.strippingCodeFences(from: "\n```\nvalue\n```\n") == "value"
+        )
+        // An interior fence is content, not wrapping — untouched.
+        let interior = "text\n```\ncode\n```"
+        #expect(CodeEditorWebCoordinator.strippingCodeFences(from: interior) == interior)
+    }
 }
 
 /// Scripted loader for the revert/watcher supersession race: the first two

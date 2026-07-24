@@ -46,6 +46,13 @@ export type EditorCopy = {
   reloadFromDisk: string;
   keepMyChanges: string;
   saveFailed: string;
+  aiEditPlaceholder: string;
+  aiEditApply: string;
+  aiEditCancel: string;
+  aiEditWorking: string;
+  aiEditSelectFirst: string;
+  aiEditAccept: string;
+  aiEditReject: string;
 };
 
 export type EditorReadyReply = {
