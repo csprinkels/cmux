@@ -388,8 +388,17 @@ struct RightSidebarPanelView: View {
             case .sourceControl:
                 SourceControlView(
                     store: sourceControlStore,
-                    onOpenDiff: {
-                        _ = AppDelegate.shared?.openDiffViewerForFocusedWorkspace(for: tabManager)
+                    onOpenDiff: { request in
+                        guard let repoRoot = sourceControlStore.repositoryRoot?.path else {
+                            _ = AppDelegate.shared?.openDiffViewerForFocusedWorkspace(for: tabManager)
+                            return
+                        }
+                        _ = AppDelegate.shared?.openDiffViewerForSourceControlFile(
+                            repoRoot: repoRoot,
+                            filePath: request.filePath,
+                            staged: request.staged,
+                            for: tabManager
+                        )
                     }
                 )
             case .sessions:

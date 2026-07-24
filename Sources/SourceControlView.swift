@@ -7,14 +7,20 @@ struct SourceControlRowActions {
     let stage: (GitStatusEntry) -> Void
     let unstage: (GitStatusEntry) -> Void
     let discard: (GitStatusEntry) -> Void
-    let openDiff: () -> Void
+    let openDiff: (SourceControlDiffRequest) -> Void
+}
+
+/// A row's request to open the diff viewer scoped to one file.
+struct SourceControlDiffRequest {
+    let filePath: String
+    let staged: Bool
 }
 
 /// The Source Control sidebar tool: branch bar, staged/unstaged change
 /// sections, and a commit box, driven by ``SourceControlStore``.
 struct SourceControlView: View {
     let store: SourceControlStore
-    let onOpenDiff: () -> Void
+    let onOpenDiff: (SourceControlDiffRequest) -> Void
 
     @State private var entryPendingDiscard: GitStatusEntry?
 
@@ -328,7 +334,9 @@ private struct SourceControlRowView: View {
                 : Color.clear
         )
         .onHover { isHovered = $0 }
-        .onTapGesture(count: 2) { actions.openDiff() }
+        .onTapGesture(count: 2) {
+            actions.openDiff(SourceControlDiffRequest(filePath: entry.path, staged: section == .staged))
+        }
     }
 
     @ViewBuilder

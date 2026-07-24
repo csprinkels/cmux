@@ -164,6 +164,7 @@ extension CMUXCLI {
         var branchBase: String?
         var sessionId: String?
         var source: DiffSource?
+        var file: String?
         var inputs: [String] = []
     }
 
@@ -187,6 +188,7 @@ extension CMUXCLI {
         var sessionId: String?
         var repoRoot: String?
         var branchBaseRef: String?
+        var initialSelectedFile: String? = nil
     }
 
     struct DiffViewerWriteResult {
@@ -597,6 +599,9 @@ extension CMUXCLI {
                 "showFiles": CMUXDiffViewerLocalization.string("diffViewer.showFiles", defaultValue: "Show files"),
                 "showFileSearch": CMUXDiffViewerLocalization.string("diffViewer.showFileSearch", defaultValue: "Show file search"),
                 "showLineNumbers": CMUXDiffViewerLocalization.string("diffViewer.showLineNumbers", defaultValue: "Show line numbers"),
+                "stageHunk": CMUXDiffViewerLocalization.string("diffViewer.stageHunk", defaultValue: "Stage Hunk"),
+                "stagingFailed": CMUXDiffViewerLocalization.string("diffViewer.stagingFailed", defaultValue: "Could not update the git index."),
+                "unstageHunk": CMUXDiffViewerLocalization.string("diffViewer.unstageHunk", defaultValue: "Unstage Hunk"),
                 "switchToSplitDiff": CMUXDiffViewerLocalization.string("diffViewer.switchToSplitDiff", defaultValue: "Switch to split diff"),
                 "switchToUnifiedDiff": CMUXDiffViewerLocalization.string("diffViewer.switchToUnifiedDiff", defaultValue: "Switch to unified diff"),
                 "untitled": CMUXDiffViewerLocalization.string("diffViewer.untitled", defaultValue: "Untitled"),
@@ -996,6 +1001,7 @@ extension CMUXCLI {
             workspaceHandle = sourceContext.workspaceId ?? workspaceHandle
             surfaceHandle = sourceContext.surfaceId ?? surfaceHandle
         }
+        diffSourceContext.initialSelectedFile = parsedArgs.file
 
         let appearance = diffViewerAppearance(
             socketPath: socketPath,
@@ -1345,6 +1351,10 @@ extension CMUXCLI {
                     continue
                 case "--base", "--branch-base":
                     parsed.branchBase = try openOptionValue(commandArgs, index: index, name: arg)
+                    index += 2
+                    continue
+                case "--file":
+                    parsed.file = try openOptionValue(commandArgs, index: index, name: arg)
                     index += 2
                     continue
                 case "--source":
@@ -7314,6 +7324,7 @@ extension CMUXCLI {
         capabilityToken: String? = nil,
         assets: DiffViewerAssets? = nil,
         sharedPayload: DiffViewerSharedPayload? = nil,
+        initialSelectedFile: String? = nil,
         runtime: URL? = nil
     ) throws {
         try writeDiffViewerHTML(
@@ -7339,6 +7350,7 @@ extension CMUXCLI {
             statusMessage: message,
             statusIsError: isError,
             pollForReplacement: pollForReplacement,
+            initialSelectedFile: initialSelectedFile,
             runtime: runtime
         )
     }
@@ -7402,6 +7414,7 @@ extension CMUXCLI {
         statusMessage: String? = nil,
         statusIsError: Bool = false,
         pollForReplacement: Bool = false,
+        initialSelectedFile: String? = nil,
         runtime: URL? = nil
     ) throws {
         if let localPatchURL {
@@ -7464,6 +7477,9 @@ extension CMUXCLI {
         if let sessionSource, let capabilityToken {
             payload["sessionSource"] = sessionSource
             payload["capabilityToken"] = capabilityToken
+        }
+        if let initialSelectedFile, !initialSelectedFile.isEmpty {
+            payload["initialSelectedFile"] = initialSelectedFile
         }
         let assets = try preparedAssets ?? ensureDiffViewerAssets(nextTo: viewerURL, runtime: runtime)
         let config: [String: Any] = [
@@ -7910,6 +7926,7 @@ extension CMUXCLI {
           --window <id|ref|index>      Target window
           --cwd, --repo <path>          Git repository or worktree path for git sources
           --base <ref>                  Base ref for --branch (default: origin/HEAD or main)
+          --file <path>                Scroll to this repository-relative file once the diff loads
           --focus <true|false>         Focus the diff browser split (default: false)
           --no-focus                   Do not focus the opened diff browser split
           --title <text>               Set the diff viewer title to the provided text

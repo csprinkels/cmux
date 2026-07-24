@@ -6109,6 +6109,37 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         )
     }
 
+    /// Opens the diff viewer scoped to one file from a Source Control row:
+    /// the staged side for staged rows, the unstaged side otherwise, scrolled
+    /// to the file once the diff loads.
+    @discardableResult
+    func openDiffViewerForSourceControlFile(
+        repoRoot: String,
+        filePath: String,
+        staged: Bool,
+        for tabManager: TabManager?
+    ) -> Bool {
+        guard let workspace = tabManager?.selectedWorkspace,
+              let cliURL = Bundle.main.resourceURL?.appendingPathComponent("bin/cmux"),
+              FileManager.default.isExecutableFile(atPath: cliURL.path) else {
+            return false
+        }
+        let socketPath = TerminalController.shared.activeSocketPath(
+            preferredPath: SocketControlSettings.socketPath()
+        )
+        return launchDiffViewerProcess(
+            cliURL: cliURL,
+            socketPath: socketPath,
+            cwd: repoRoot,
+            workspaceId: workspace.id,
+            surfaceId: workspace.focusedPanelId,
+            useLastTurnSource: false,
+            sessionId: nil,
+            stagedSource: staged,
+            filePath: filePath
+        )
+    }
+
     private func focusedAgentWorkingDirectoryContext(for workspace: Workspace) -> (cwd: String, sessionId: String?)? {
         guard let surfaceId = workspace.focusedPanelId else { return nil }
         guard let snapshot = SharedLiveAgentIndex.shared.snapshot(workspaceId: workspace.id, panelId: surfaceId) else {
@@ -6132,18 +6163,23 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         surfaceId: UUID?,
         useLastTurnSource: Bool,
         sessionId: String?,
-        focus: Bool = true
+        focus: Bool = true,
+        stagedSource: Bool = false,
+        filePath: String? = nil
     ) -> Bool {
         let process = Process()
         process.executableURL = cliURL
         var arguments = [
             "--socket", socketPath,
             "diff",
-            useLastTurnSource ? "--last-turn" : "--unstaged",
+            useLastTurnSource ? "--last-turn" : (stagedSource ? "--staged" : "--unstaged"),
             "--cwd", cwd,
             "--workspace", workspaceId.uuidString,
             "--focus", focus ? "true" : "false",
         ]
+        if let filePath, !filePath.isEmpty {
+            arguments.append(contentsOf: ["--file", filePath])
+        }
         if let surfaceId {
             arguments.append(contentsOf: ["--surface", surfaceId.uuidString])
         }

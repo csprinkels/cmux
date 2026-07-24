@@ -1296,6 +1296,37 @@ body[data-loading="true"] #status::before {
   background: color-mix(in lab, var(--cmux-diff-accent) 86%, var(--cmux-diff-fg));
   color: light-dark(#fff, #08233f);
 }
+.hunk-stage-row {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  margin: 2px 12px 4px;
+  font-family: var(--cmux-diff-ui-font-family);
+  font-size: 11px;
+  color: var(--cmux-diff-text-muted);
+}
+.hunk-stage-error {
+  color: light-dark(#b3261e, #ff6b64);
+}
+.hunk-stage-button {
+  padding: 2px 10px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--cmux-diff-text-muted);
+  font: inherit;
+  font-weight: 500;
+  cursor: pointer;
+}
+.hunk-stage-button:hover:not(:disabled) {
+  background: var(--cmux-diff-hover-bg);
+  color: var(--cmux-diff-fg);
+}
+.hunk-stage-button:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
 .comment-card-header {
   display: flex;
   align-items: center;

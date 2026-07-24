@@ -244,6 +244,7 @@ extension CMUXCLI {
                 capabilityToken: target.mapper.token,
                 assets: assets,
                 sharedPayload: sharedPayload,
+                initialSelectedFile: context.initialSelectedFile,
                 runtime: target.runtime
             )
             if let lastTurnInput {

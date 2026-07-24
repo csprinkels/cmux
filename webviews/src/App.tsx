@@ -45,6 +45,13 @@ import {
   workerHighlighterOptions,
   type DiffViewerOptions,
 } from "./pierre-options";
+import {
+  HunkStageActions,
+  hunkStageActionForSource,
+  hunkStageAnnotations,
+  stagingBridgeAvailable,
+  type HunkStageAnnotation,
+} from "./staging";
 import { applyDiffViewerStatusToDocument, createDiffViewerStatus } from "./status";
 import { resolveToolbarOverflow } from "./toolbar-overflow";
 import { useToolbarWidth } from "./useToolbarWidth";
@@ -295,7 +302,10 @@ export function App({ config, initialStatus }: ConfigProps) {
   const workerPoolOptions = createDiffWorkerPoolOptions(workerModuleURL);
   const highlighterOptions = workerHighlighterOptions(state.options, appearance, state.languages);
   const payloadRepoRoot = typeof payload.repoRoot === "string" && payload.repoRoot !== "" ? payload.repoRoot : null;
-  const commentRepoRoot = diffSourceRepoRoot(resolvedSessionSource ?? activeSessionSource) ?? payloadRepoRoot;
+  const currentSessionSource = resolvedSessionSource ?? activeSessionSource;
+  const commentRepoRoot = diffSourceRepoRoot(currentSessionSource) ?? payloadRepoRoot;
+  const hunkStageAction = stagingBridgeAvailable() ? hunkStageActionForSource(currentSessionSource) : null;
+  const hunkStageRepoRoot = diffSourceRepoRoot(currentSessionSource);
   const bridgeAvailable = diffCommentsBridgeAvailable() && commentRepoRoot != null;
   const commentLabels = resolveCommentLabels(payload);
   const comments = useDiffComments({
@@ -306,6 +316,30 @@ export function App({ config, initialStatus }: ConfigProps) {
   });
   const renderedCodeViewOptions = codeViewOptions(state.options, appearance);
   renderedCodeViewOptions.onGutterUtilityClick = comments.onGutterUtilityClick as any;
+  // Stage/unstage rows are a render-time decoration: stored items keep only
+  // comment annotations, so the comment equality/versioning flow never sees
+  // hunk annotations.
+  const renderedItems = useMemo(() => {
+    if (hunkStageAction == null || hunkStageRepoRoot == null) {
+      return state.items;
+    }
+    return state.items.map((item) => {
+      const annotations = hunkStageAnnotations(
+        item.fileDiff,
+        fileName(item.fileDiff, ""),
+        hunkStageAction,
+        hunkStageRepoRoot,
+      );
+      if (annotations.length === 0) {
+        return item;
+      }
+      return {
+        ...item,
+        annotations: [...(item.annotations ?? []), ...annotations],
+        version: (item.version ?? 0) + 1,
+      } as DiffItem;
+    });
+  }, [state.items, hunkStageAction, hunkStageRepoRoot]);
   const closeActiveSession = useCallback(() => {
     const activeSession = activeSessionRef.current;
     if (!transport) {
@@ -417,6 +451,42 @@ export function App({ config, initialStatus }: ConfigProps) {
       treePath: current.treeSource?.treePathByItemId.get(target),
     });
   }, [latestState]);
+  // One-shot scroll target: seeded by `cmux diff --file <path>` and re-armed
+  // after a hunk stage/unstage so the reopened session lands on the same
+  // file. Consumed the first time the streaming tree contains the path.
+  const pendingScrollPathRef = useRef<string | null>(
+    typeof payload.initialSelectedFile === "string" && payload.initialSelectedFile !== ""
+      ? payload.initialSelectedFile
+      : null,
+  );
+  useEffect(() => {
+    const path = pendingScrollPathRef.current;
+    const treeSource = state.treeSource;
+    if (path == null || treeSource == null) {
+      return;
+    }
+    for (const [itemId, treePath] of treeSource.treePathByItemId) {
+      if (treePath === path || treePath.endsWith(`/${path}`)) {
+        pendingScrollPathRef.current = null;
+        scrollToItem(itemId);
+        break;
+      }
+    }
+  }, [state.treeSource, scrollToItem]);
+  const reopenSessionAfterStaging = (filePath: string) => {
+    const source = currentSessionSource;
+    if (source == null) {
+      return;
+    }
+    pendingScrollPathRef.current = filePath;
+    const status = createDiffViewerStatus(label("loadingDiff"), { pending: true });
+    applyDiffViewerStatusToDocument(status);
+    dispatch({ type: "reset-diff", status });
+    setActivePatchURL(undefined);
+    void closeActiveSession();
+    setResolvedSessionSource({ ...source });
+    setActiveSessionSource({ ...source });
+  };
   const jumpAdjacentFile = useCallback((direction: -1 | 1) => {
     const current = latestState.current;
     const visibleItem = visibleItemId(
@@ -519,14 +589,25 @@ export function App({ config, initialStatus }: ConfigProps) {
                 ref={codeViewRef}
                 className="code-view-root"
                 containerRef={viewerContainerRef}
-                items={state.items}
+                items={renderedItems}
                 onScroll={handleCodeViewScroll}
                 options={renderedCodeViewOptions}
                 renderHeaderMetadata={(item) => (
                   <DiffHeaderMetadata fileDiff={(item as DiffItem).fileDiff} label={label} />
                 )}
-                renderAnnotation={(annotation, item) =>
-                  renderCommentAnnotation(annotation as CommentAnnotation, item as DiffItem)}
+                renderAnnotation={(annotation, item) => {
+                  const metadata = (annotation as CommentAnnotation | HunkStageAnnotation).metadata;
+                  if (metadata.kind === "hunkStage") {
+                    return (
+                      <HunkStageActions
+                        metadata={metadata}
+                        label={label}
+                        onApplied={reopenSessionAfterStaging}
+                      />
+                    );
+                  }
+                  return renderCommentAnnotation(annotation as CommentAnnotation, item as DiffItem);
+                }}
               />
             </WorkerPoolContextProvider>
           ) : null}

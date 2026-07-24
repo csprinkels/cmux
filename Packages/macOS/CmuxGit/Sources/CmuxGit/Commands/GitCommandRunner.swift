@@ -164,6 +164,27 @@ public actor GitCommandRunner {
         return URL(fileURLWithPath: path, isDirectory: true)
     }
 
+    // MARK: - Diff
+
+    /// Reads one file's diff text (`git diff [--cached] -- <path>`), the
+    /// input for ``GitDiffHunkSplitter``.
+    ///
+    /// - Parameters:
+    ///   - path: A repository-relative tracked path.
+    ///   - staged: Pass `true` for the index-vs-HEAD diff (`--cached`);
+    ///     `false` for the worktree-vs-index diff.
+    ///   - repository: The repository's working-tree root.
+    /// - Returns: The diff text; empty when the file has no changes on that
+    ///   side.
+    public func fileDiff(path: String, staged: Bool, in repository: URL) async throws -> String {
+        var arguments = ["diff", "--no-color", "--no-ext-diff"]
+        if staged {
+            arguments.append("--cached")
+        }
+        arguments.append(contentsOf: ["--", path])
+        return try await run(arguments, in: repository).standardOutput
+    }
+
     // MARK: - Status
 
     /// Reads the repository's change list with staged/unstaged sides intact

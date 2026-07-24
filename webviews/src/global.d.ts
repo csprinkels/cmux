@@ -42,6 +42,9 @@ declare global {
         cmuxEditor?: {
           postMessage(message: unknown): Promise<unknown>;
         };
+        cmuxGitStage?: {
+          postMessage(message: unknown): Promise<unknown>;
+        };
       };
     };
   }

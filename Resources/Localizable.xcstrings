@@ -242810,6 +242810,91 @@
           }
         }
       }
+    },
+    "diffViewer.stageHunk": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Stage Hunk"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ハンクをステージ"
+          }
+        }
+      }
+    },
+    "diffViewer.unstageHunk": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Unstage Hunk"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ハンクのステージを解除"
+          }
+        }
+      }
+    },
+    "diffViewer.stagingFailed": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Could not update the git index."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Git インデックスを更新できませんでした。"
+          }
+        }
+      }
+    },
+    "diffStaging.bridge.notAllowed": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "This page cannot stage changes."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "このページでは変更をステージできません。"
+          }
+        }
+      }
+    },
+    "diffStaging.bridge.hunkOutOfDate": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "This hunk no longer matches the repository. Reload the diff to continue."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "このハンクはリポジトリと一致しなくなりました。差分を再読み込みしてください。"
+          }
+        }
+      }
     }
   },
   "version": "1.0"

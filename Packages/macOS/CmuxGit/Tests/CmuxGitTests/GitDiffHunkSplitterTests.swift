@@ -86,6 +86,34 @@ struct GitDiffHunkSplitterTests {
         #expect(!hunks.contains(where: { $0.patchText.contains("ZED") }))
     }
 
+    @Test("Header numbers parse with omitted counts defaulting to 1")
+    func headerNumbersParse() {
+        let hunks = splitter.split(fileDiff: twoHunkDiff)
+        #expect(hunks[0].headerNumbers == .init(deletionStart: 1, deletionCount: 3, additionStart: 1, additionCount: 3))
+        #expect(hunks[1].headerNumbers == .init(deletionStart: 10, deletionCount: 3, additionStart: 10, additionCount: 4))
+        let lone = GitDiffHunk(index: 0, header: "@@ -5 +7,0 @@ fn main", patchText: "")
+        #expect(lone.headerNumbers == .init(deletionStart: 5, deletionCount: 1, additionStart: 7, additionCount: 0))
+        #expect(GitDiffHunk(index: 0, header: "not a header", patchText: "").headerNumbers == nil)
+    }
+
+    @Test("fileDiff returns both sides and feeds the splitter")
+    func fileDiffFeedsSplitter() async throws {
+        let fixture = try LiveGitRepositoryFixture()
+        let runner = GitCommandRunner(environment: fixture.environment)
+        try fixture.write("one\ntwo\n", to: "a.txt")
+        try fixture.commitAll(message: "initial")
+        try fixture.write("ONE\ntwo\n", to: "a.txt")
+
+        let unstaged = try await runner.fileDiff(path: "a.txt", staged: false, in: fixture.root)
+        #expect(splitter.split(fileDiff: unstaged).count == 1)
+        #expect(try await runner.fileDiff(path: "a.txt", staged: true, in: fixture.root).isEmpty)
+
+        try await runner.stage(paths: ["a.txt"], in: fixture.root)
+        #expect(try await runner.fileDiff(path: "a.txt", staged: false, in: fixture.root).isEmpty)
+        let staged = try await runner.fileDiff(path: "a.txt", staged: true, in: fixture.root)
+        #expect(splitter.split(fileDiff: staged).first?.patchText.contains("+ONE") == true)
+    }
+
     @Test("A lone second hunk applies to the index without the first")
     func loneSecondHunkAppliesToIndex() async throws {
         let fixture = try LiveGitRepositoryFixture()
