@@ -62,6 +62,8 @@ export type EditorReadyReply = {
   diskContent: string;
   path: string;
   wordWrap: boolean;
+  /** Whether inline ghost-text autocomplete is enabled (`ai.autocomplete.enabled`). */
+  aiAutocomplete: boolean;
   /** App UI locale (e.g. "en", "ja") for CodeMirror's built-in phrases. */
   locale: string;
   theme: EditorTheme;
@@ -72,7 +74,7 @@ export type EditorHostEvent =
   | { type: "document.external"; content: string }
   | { type: "document.saved"; content: string }
   | { type: "app.theme"; theme: EditorTheme }
-  | { type: "app.options"; wordWrap: boolean };
+  | { type: "app.options"; wordWrap: boolean; aiAutocomplete?: boolean };
 
 type NativeReply<T> =
   | { ok: true; value: T }

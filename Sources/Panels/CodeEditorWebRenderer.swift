@@ -177,6 +177,9 @@ final class CodeEditorWebCoordinator: NSObject, WKNavigationDelegate, WKUIDelega
     private var lastDiskSyncToken: Int?
     /// In-flight edit-selection generation; single-flight per editor.
     private var aiEditTask: Task<[String: Any], Never>?
+    /// In-flight autocomplete generation; single-flight per editor.
+    private var aiCompleteTask: Task<[String: Any], Never>?
+    private var aiAutocompleteEnabled = false
 
     func bind(panel: FilePreviewPanel, theme: AgentSessionWebTheme, wordWrap: Bool, isFocused: Bool) {
         self.panel = panel
@@ -190,10 +193,18 @@ final class CodeEditorWebCoordinator: NSObject, WKNavigationDelegate, WKUIDelega
                 sendEvent(["type": "app.theme", "theme": themeDictionary()])
             }
         }
-        if self.wordWrap != wordWrap {
+        // Settings changes reach the editor through the same options event as
+        // word wrap, so toggling autocomplete applies without reopening.
+        let autocompleteEnabled = AIEditorSettings.isAutocompleteEnabled()
+        if self.wordWrap != wordWrap || self.aiAutocompleteEnabled != autocompleteEnabled {
             self.wordWrap = wordWrap
+            self.aiAutocompleteEnabled = autocompleteEnabled
             if isReady {
-                sendEvent(["type": "app.options", "wordWrap": wordWrap])
+                sendEvent([
+                    "type": "app.options",
+                    "wordWrap": wordWrap,
+                    "aiAutocomplete": autocompleteEnabled
+                ])
             }
         }
         syncDiskContentIfNeeded()
@@ -324,6 +335,8 @@ final class CodeEditorWebCoordinator: NSObject, WKNavigationDelegate, WKUIDelega
         terminalThemeObservers = []
         aiEditTask?.cancel()
         aiEditTask = nil
+        aiCompleteTask?.cancel()
+        aiCompleteTask = nil
         webView = nil
         panel = nil
         hasLoadedShell = false
@@ -367,6 +380,7 @@ final class CodeEditorWebCoordinator: NSObject, WKNavigationDelegate, WKUIDelega
                 "diskContent": panel.diskTextContent,
                 "path": panel.filePath,
                 "wordWrap": wordWrap,
+                "aiAutocomplete": aiAutocompleteEnabled,
                 "locale": Bundle.main.preferredLocalizations.first ?? "en",
                 "theme": themeDictionary(),
                 "copy": [
@@ -427,6 +441,17 @@ final class CodeEditorWebCoordinator: NSObject, WKNavigationDelegate, WKUIDelega
                 lastSyncedDiskContent = content
             }
             return ["saved": saved]
+        case "ai.complete":
+            guard AIEditorSettings.isAutocompleteEnabled(),
+                  let prefix = params["prefix"] as? String, !prefix.isEmpty else {
+                return ["cancelled": true]
+            }
+            return await performAICompletion(
+                prefix: prefix,
+                suffix: params["suffix"] as? String ?? "",
+                language: params["language"] as? String ?? "",
+                path: params["path"] as? String ?? panel.filePath
+            )
         case "ai.editSelection":
             guard let selection = params["selection"] as? String, !selection.isEmpty,
                   let instruction = params["instruction"] as? String, !instruction.isEmpty else {
@@ -441,6 +466,108 @@ final class CodeEditorWebCoordinator: NSObject, WKNavigationDelegate, WKUIDelega
         default:
             return nil
         }
+    }
+
+    // MARK: - AI autocomplete
+
+    /// Runs one fill-in-the-middle completion. Single-flight: a newer
+    /// keystroke cancels the request in flight.
+    private func performAICompletion(
+        prefix: String,
+        suffix: String,
+        language: String,
+        path: String
+    ) async -> [String: Any] {
+        aiCompleteTask?.cancel()
+        let task = Task { () -> [String: Any] in
+            let selection = AIEditorSettings.autocompleteSelection()
+            guard let configuration = AIEditorSettings.configuration(for: selection) else {
+                return ["cancelled": true]
+            }
+            let request = AIProviderRequest(
+                messages: [
+                    AIChatMessage(role: .system, text: Self.aiCompleteSystemPrompt),
+                    AIChatMessage(
+                        role: .user,
+                        text: Self.aiCompleteUserPrompt(
+                            prefix: prefix,
+                            suffix: suffix,
+                            language: language,
+                            path: path
+                        )
+                    ),
+                ],
+                // Completions are a line or few; a low cap keeps latency
+                // inside the typing loop.
+                maxTokens: 128,
+                temperature: 0.1,
+                stopSequences: ["<|cmux-end|>"]
+            )
+            do {
+                let stream = try await AIProviderClient().streamText(request, configuration: configuration)
+                var output = ""
+                for try await delta in stream {
+                    try Task.checkCancellation()
+                    output += delta
+                }
+                return ["text": Self.normalizedCompletion(Self.strippingCodeFences(from: output))]
+            } catch is CancellationError {
+                return ["cancelled": true]
+            } catch {
+                // Autocomplete failures stay silent: the editor simply shows
+                // no suggestion rather than interrupting typing.
+                return ["cancelled": true]
+            }
+        }
+        aiCompleteTask = task
+        return await task.value
+    }
+
+    nonisolated private static let aiCompleteSystemPrompt = """
+    You are a code completion engine. Continue the code at the cursor. Reply \
+    with only the text to insert — no explanations, no markdown fences, and \
+    never repeat code that already appears before or after the cursor. Keep \
+    completions short: finish the current statement or block.
+    """
+
+    nonisolated private static func aiCompleteUserPrompt(
+        prefix: String,
+        suffix: String,
+        language: String,
+        path: String
+    ) -> String {
+        var lines = ["File: \(path)"]
+        if !language.isEmpty {
+            lines.append("Language: \(language)")
+        }
+        lines.append("")
+        lines.append("Code before the cursor:")
+        lines.append(prefix)
+        lines.append("<|cmux-cursor|>")
+        if !suffix.isEmpty {
+            lines.append("Code after the cursor:")
+            lines.append(suffix)
+        }
+        lines.append("")
+        lines.append("Insert at <|cmux-cursor|>:")
+        return lines.joined(separator: "\n")
+    }
+
+    /// Trims a completion to something safe to show as ghost text: leading
+    /// newlines dropped, trailing whitespace trimmed, capped at a few lines.
+    nonisolated static func normalizedCompletion(_ text: String, maximumLines: Int = 8) -> String {
+        var value = text
+        while value.hasPrefix("\n") {
+            value.removeFirst()
+        }
+        let lines = value.split(separator: "\n", omittingEmptySubsequences: false)
+        if lines.count > maximumLines {
+            value = lines.prefix(maximumLines).joined(separator: "\n")
+        }
+        while let last = value.last, last == " " || last == "\n" || last == "\t" {
+            value.removeLast()
+        }
+        return value
     }
 
     // MARK: - AI edit selection

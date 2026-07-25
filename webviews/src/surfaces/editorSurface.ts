@@ -42,6 +42,7 @@ import {
 } from "./editor/bridge";
 import { aiEditFeature } from "./editor/aiEdit";
 import { DocumentSession } from "./editor/documentSession";
+import { ghostTextFeature } from "./editor/ghostText";
 import { hasUsableTerminalPalette, terminalHighlightStyle } from "./editor/terminalHighlight";
 
 const DIRTY_NOTIFY_DEBOUNCE_MS = 100;
@@ -202,6 +203,11 @@ const editorChrome = EditorView.theme({
   ".cmux-ai-edit-panel .cm-textfield": {
     flex: "1",
     minWidth: "120px",
+  },
+  ".cmux-ghost-text": {
+    color: "color-mix(in srgb, var(--cmux-editor-muted, currentColor) 70%, transparent)",
+    fontStyle: "italic",
+    pointerEvents: "none",
   },
   ".cmux-ai-edit-status": {
     color: "var(--cmux-editor-muted, inherit)",
@@ -455,6 +461,7 @@ async function start(rootElement: HTMLElement): Promise<void> {
 
   const session = new DocumentSession(ready.diskContent);
   let currentLanguageName = "";
+  let aiAutocompleteEnabled = ready.aiAutocomplete === true;
   const languageCompartment = new Compartment();
   const themeCompartment = new Compartment();
   const wrapCompartment = new Compartment();
@@ -575,6 +582,11 @@ async function start(rootElement: HTMLElement): Promise<void> {
           },
           language: () => currentLanguageName,
         }),
+        ghostTextFeature({
+          isEnabled: () => aiAutocompleteEnabled,
+          language: () => currentLanguageName,
+          path: () => ready.path,
+        }),
         localePhrases(ready.locale ?? "en"),
         EditorView.updateListener.of((update) => {
           if (update.docChanged) {
@@ -621,6 +633,9 @@ async function start(rootElement: HTMLElement): Promise<void> {
         break;
       }
       case "app.options": {
+        if (typeof event.aiAutocomplete === "boolean") {
+          aiAutocompleteEnabled = event.aiAutocomplete;
+        }
         view.dispatch({ effects: wrapCompartment.reconfigure(wrapExtensions(event.wordWrap)) });
         break;
       }

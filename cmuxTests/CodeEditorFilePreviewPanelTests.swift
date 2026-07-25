@@ -234,6 +234,19 @@ struct CodeEditorFilePreviewPanelTests {
         let interior = "text\n```\ncode\n```"
         #expect(CodeEditorWebCoordinator.strippingCodeFences(from: interior) == interior)
     }
+
+    @Test("completions drop leading blank lines, trailing space, and overlong tails")
+    func completionNormalization() {
+        #expect(CodeEditorWebCoordinator.normalizedCompletion("\n\nlet x = 1  ") == "let x = 1")
+        #expect(CodeEditorWebCoordinator.normalizedCompletion("value") == "value")
+        // Interior blank lines survive; only the leading ones are dropped.
+        #expect(CodeEditorWebCoordinator.normalizedCompletion("\na\n\nb\n") == "a\n\nb")
+        let long = (1...12).map { "line \($0)" }.joined(separator: "\n")
+        #expect(
+            CodeEditorWebCoordinator.normalizedCompletion(long, maximumLines: 3)
+                == "line 1\nline 2\nline 3"
+        )
+    }
 }
 
 /// Scripted loader for the revert/watcher supersession race: the first two
